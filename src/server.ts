@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z, type ZodType } from 'zod'
 import { registerConfigureTool } from './configure.js'
+import { registerAllTools } from './tools/index.js'
 
 export type ToolResult = {
   content: Array<{ type: 'text'; text: string }>
@@ -66,6 +67,9 @@ export function createServer(): McpServer {
 
   // Registra il tool configure nel registry interno
   registerConfigureTool()
+
+  // Registra tutti i tool (U2, U3, U4)
+  registerAllTools(server)
 
   // Registra tutti i tool visibili sull'McpServer
   for (const tool of toolRegistry.values()) {

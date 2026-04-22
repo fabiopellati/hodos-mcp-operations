@@ -76,8 +76,8 @@ export function registerNotesWriteTools(): void {
         // 1. Inserisci riga nell'indice (in cima, dopo l'header)
         const indexResult = findIndexTable(tree)
         if (indexResult) {
-          const rowOffset = findFirstDataRowOffset(indexResult.table)
-          const newRow = `| ${id} | ${descrizione} | ${date} |\n`
+          const { offset: rowOffset, needsNewline } = findFirstDataRowOffset(indexResult.table)
+          const newRow = `${needsNewline ? '\n' : ''}| ${id} | ${descrizione} | ${date} |\n`
           result = insertAt(result, rowOffset, newRow)
           // Dopo l'inserimento, tutti gli offset successivi shiftano di newRow.length
           const shift = newRow.length

@@ -195,13 +195,22 @@ export function findAfterIndexSeparatorOffset(tree: Root): number {
  * Trova la prima riga della tabella (dopo l'header) come offset
  * per inserire una nuova riga in cima.
  */
-export function findFirstDataRowOffset(table: Table): number {
+/**
+ * Restituisce l'offset per inserire una nuova riga in cima
+ * alla tabella (dopo l'header) e un flag che indica se serve
+ * un \n prima della riga (quando si inserisce alla fine della
+ * tabella vuota, il \n della riga precedente non è incluso).
+ */
+export function findFirstDataRowOffset(
+  table: Table
+): { offset: number; needsNewline: boolean } {
   // La riga 0 è l'header. Se ci sono righe dati, inserisci
-  // prima della prima riga dati. Altrimenti inserisci alla fine.
+  // prima della prima riga dati.
   if (table.children.length > 1) {
-    return nodeStart(table.children[1])
+    return { offset: nodeStart(table.children[1]), needsNewline: false }
   }
-  return nodeEnd(table)
+  // Tabella vuota: inserisci alla fine, ma serve \n
+  return { offset: nodeEnd(table), needsNewline: true }
 }
 
 /**

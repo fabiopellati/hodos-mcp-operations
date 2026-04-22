@@ -39,9 +39,15 @@ function toSlug(text: string): string {
  * se il campo "Data risposta" ha un valore dopo i due punti.
  */
 function isResponseCompiled(content: string): boolean {
-  const match = content.match(/\*\*Data risposta\*\*:\s*(.*)/)
-  if (!match) return false
-  return match[1].trim().length > 0
+  // Cerca la riga "**Data risposta**: VALORE" con valore non vuoto
+  const lines = content.split('\n')
+  for (const line of lines) {
+    if (line.startsWith('**Data risposta**:')) {
+      const value = line.slice('**Data risposta**:'.length).trim()
+      return value.length > 0
+    }
+  }
+  return false
 }
 
 // --- create_rfc ---

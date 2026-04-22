@@ -127,8 +127,8 @@ export function registerQuestioniWriteTools(): void {
         // 1. Inserisci riga nell'indice (in cima, dopo l'header)
         const indexInfo = findIndexTable(tree)
         if (indexInfo) {
-          const rowOffset = findFirstDataRowOffset(indexInfo.table)
-          const newRow = `| ${id} | ${parsed.titolo} | open |\n`
+          const { offset: rowOffset, needsNewline } = findFirstDataRowOffset(indexInfo.table)
+          const newRow = `${needsNewline ? '\n' : ''}| ${id} | ${parsed.titolo} | open |\n`
           result = insertAt(result, rowOffset, newRow)
           // Dopo l'inserimento, tutti gli offset successivi sono spostati
           // di newRow.length. Ricalcoliamo l'AST per le operazioni successive.

@@ -1,0 +1,4 @@
+FROM node:22-alpine
+RUN apk add --no-cache wget
+USER 1000:1000
+WORKDIR /app

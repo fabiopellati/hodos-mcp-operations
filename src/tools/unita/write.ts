@@ -18,22 +18,22 @@ function validateNomeUnita(nome: string): void {
   }
 }
 
-function scaffoldSemplice(): Array<{ name: string; content: string }> {
+function scaffoldSemplice(nome: string): Array<{ name: string; content: string }> {
   return [
-    { name: 'design.md', content: '# Design\n' },
-    { name: 'attivita.md', content: '# Attività\n' }
+    { name: 'design.md', content: `# Design — ${nome}\n` },
+    { name: 'attivita.md', content: `# Attività — ${nome}\n` }
   ]
 }
 
-function scaffoldArticolato(): Array<{ name: string; content: string }> {
+function scaffoldArticolato(nome: string): Array<{ name: string; content: string }> {
   return [
-    { name: '0-design.md', content: '# Design\n' },
-    { name: '1-obiettivi.md', content: '# Obiettivi\n' },
-    { name: '2-scenari.md', content: '# Scenari\n' },
-    { name: '3-requisiti.md', content: '# Requisiti\n' },
-    { name: '4-vincoli.md', content: '# Vincoli\n' },
-    { name: '5-struttura.md', content: '# Struttura\n' },
-    { name: 'attivita.md', content: '# Attività\n' }
+    { name: '0-design.md', content: `# Design — ${nome}\n` },
+    { name: '1-obiettivi.md', content: `# Obiettivi — ${nome}\n` },
+    { name: '2-scenari.md', content: `# Scenari — ${nome}\n` },
+    { name: '3-requisiti.md', content: `# Requisiti — ${nome}\n` },
+    { name: '4-vincoli.md', content: `# Vincoli — ${nome}\n` },
+    { name: '5-struttura.md', content: `# Struttura — ${nome}\n` },
+    { name: 'attivita.md', content: `# Attività — ${nome}\n` }
   ]
 }
 
@@ -73,7 +73,7 @@ export function registerUnitaWriteTools(): void {
 
       await mkdir(unitDir, { recursive: true })
 
-      const files = articolato ? scaffoldArticolato() : scaffoldSemplice()
+      const files = articolato ? scaffoldArticolato(nome) : scaffoldSemplice(nome)
       const creati: string[] = []
 
       for (const file of files) {

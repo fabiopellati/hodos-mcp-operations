@@ -68,15 +68,16 @@ export function registerMastroWriteTools(): void {
         const bodyTree = parseMarkdown(body)
         const insertPoint = findInsertionPointAfterTitle(tree)
 
-        // Verifica se il nodo alla posizione di inserimento e' gia' un thematicBreak
-        const nodeAtInsert = tree.children[insertPoint]
-        const needsBreak = !nodeAtInsert || nodeAtInsert.type !== 'thematicBreak'
-
-        // Inserisci dopo il titolo h1, prima di tutto il resto
-        const toInsert = needsBreak
-          ? [...bodyTree.children, { type: 'thematicBreak' as const }]
-          : bodyTree.children
+        // Inserisci entry + thematicBreak dopo il titolo h1
+        const toInsert = [...bodyTree.children, { type: 'thematicBreak' as const }]
         tree.children.splice(insertPoint, 0, ...toInsert)
+
+        // Rimuovi eventuale thematicBreak duplicato subito dopo quello appena inserito
+        const afterInsertedBreak = insertPoint + toInsert.length
+        if (afterInsertedBreak < tree.children.length &&
+            tree.children[afterInsertedBreak].type === 'thematicBreak') {
+          tree.children.splice(afterInsertedBreak, 1)
+        }
 
         return tree
       })

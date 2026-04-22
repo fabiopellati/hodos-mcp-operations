@@ -5,7 +5,7 @@ import { registerTool, type ToolResult } from '../../server.js'
 import { validateStrings, validateEnum } from '../../operations/validate.js'
 import { atomicFileOperation } from '../../operations/atomic.js'
 import { parseMarkdown } from '../../parser/markdown.js'
-import { findSectionByHeading, getHeadingText } from '../../parser/sections.js'
+import { findSectionByHeading } from '../../parser/sections.js'
 import { findRfcFile } from './read.js'
 import type { Root } from 'mdast'
 
@@ -273,14 +273,24 @@ async function handleWriteResponseRfc(params: unknown): Promise<ToolResult> {
       }
     }
 
-    await atomicFileOperation(filePath, (tree: Root): Root => {
-      const responseSection = findSectionByHeading(tree, 'Response RFC', 2)
-      if (!responseSection) {
-        throw new Error('Sezione "Response RFC" non trovata nel file RFC')
+    // Approccio string-based: cerca il marker "## Response RFC" nel testo raw
+    // e sostituisce tutto da quel punto in poi. L'approccio AST puo' fallire
+    // silenziosamente con determinati layout del documento.
+    const responseMarker = '## Response RFC'
+    const markerIndex = rawContent.indexOf(responseMarker)
+    if (markerIndex === -1) {
+      return {
+        content: [{
+          type: 'text',
+          text: 'Sezione "## Response RFC" non trovata nel file RFC.'
+        }],
+        isError: true
       }
+    }
 
-      // Costruisce il nuovo contenuto della Response
-      const responseContent = `**Data risposta**: ${parsed.data}
+    const newResponseContent = `## Response RFC
+
+**Data risposta**: ${parsed.data}
 **Stato**: ${parsed.stato}
 **Da**: ${parsed.da}
 **A**: ${parsed.a}
@@ -297,15 +307,8 @@ ${parsed.lavoro}
 
 ${parsed.deviazioni}
 `
-      const newNodes = parseMarkdown(responseContent).children
-
-      const newChildren = [
-        ...tree.children.slice(0, responseSection.startIndex + 1),
-        ...newNodes,
-        ...tree.children.slice(responseSection.endIndex)
-      ]
-      return { ...tree, children: newChildren }
-    })
+    const updatedContent = rawContent.slice(0, markerIndex) + newResponseContent
+    await writeFile(filePath, updatedContent, 'utf-8')
 
     return {
       content: [{

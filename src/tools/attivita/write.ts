@@ -79,7 +79,7 @@ export function registerAttivitaWriteTools(): void {
       'La voce non deve essere già chiusa.',
     schema: z.object({
       unita: z.string(),
-      bl_id: z.number(),
+      bl_id: z.string(),
       data: z.string(),
       conformita: z.string(),
       descrizione: z.string()
@@ -89,7 +89,7 @@ export function registerAttivitaWriteTools(): void {
     handler: async (params: unknown): Promise<ToolResult> => {
       const { unita, bl_id, data, conformita, descrizione } = z.object({
         unita: z.string(),
-        bl_id: z.number(),
+        bl_id: z.string(),
         data: z.string(),
         conformita: z.string(),
         descrizione: z.string()
@@ -104,15 +104,27 @@ export function registerAttivitaWriteTools(): void {
         )
       }
 
+      const blMatch = bl_id.match(/^BL-(\d+)$/)
+      if (!blMatch) {
+        return {
+          content: [{
+            type: 'text',
+            text: `Formato bl_id non valido: "${bl_id}". Atteso formato BL-N (es. "BL-3").`
+          }],
+          isError: true
+        }
+      }
+      const blNum = parseInt(blMatch[1], 10)
+
       const filePath = attivitaPath(unita)
       const tree = await readAndParse(filePath)
-      const block = findVoceByBlId(tree, bl_id)
+      const block = findVoceByBlId(tree, blNum)
 
       if (!block) {
         return {
           content: [{
             type: 'text',
-            text: `Voce BL-${bl_id} non trovata nell'unità "${unita}".`
+            text: `Voce ${bl_id} non trovata nell'unità "${unita}".`
           }],
           isError: true
         }
@@ -126,7 +138,7 @@ export function registerAttivitaWriteTools(): void {
             return {
               content: [{
                 type: 'text',
-                text: `La voce BL-${bl_id} è già chiusa.`
+                text: `La voce ${bl_id} è già chiusa.`
               }],
               isError: true
             }
@@ -164,7 +176,7 @@ export function registerAttivitaWriteTools(): void {
       return {
         content: [{
           type: 'text',
-          text: `Voce BL-${bl_id} chiusa con conformità "${conformita}".`
+          text: `Voce ${bl_id} chiusa con conformità "${conformita}".`
         }]
       }
     }

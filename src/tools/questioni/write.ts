@@ -440,34 +440,48 @@ export function registerQuestioniWriteTools(): void {
         if (!block) throw new Error(`Questione ${id} non trovata.`)
 
         const newItemMd = `- ${artefatto} — ${descrizione}`
+        const parsed = parseMarkdown(newItemMd).children[0]
+        if (!parsed || parsed.type !== 'list') {
+          throw new Error('Errore nel parsing del nuovo item Impatto.')
+        }
 
-        // Cerca la sezione Impatto
-        const impattoIdx = findSectionInBlock(tree.children, block.startIndex, block.endIndex, 'Impatto')
+        // Cerca TUTTI i nodi nel blocco che contengono **Impatto** nel testo
+        const impattoIndices: number[] = []
+        for (let i = block.startIndex; i < block.endIndex; i++) {
+          const node = tree.children[i]
+          const text = toString(node)
+          if (text.includes('**Impatto**') || (node.type === 'paragraph' && text.startsWith('Impatto'))) {
+            impattoIndices.push(i)
+          }
+        }
 
-        if (impattoIdx !== null) {
-          const parsed = parseMarkdown(newItemMd).children[0]
-
-          // Cerca una lista nei nodi successivi al paragrafo Impatto,
-          // fermandosi al prossimo paragrafo bold o thematicBreak
-          let listIdx: number | null = null
-          for (let i = impattoIdx + 1; i < block.endIndex; i++) {
+        // Cerca la PRIMA lista che segue uno qualsiasi dei nodi Impatto
+        let existingListIdx: number | null = null
+        for (const idx of impattoIndices) {
+          for (let i = idx + 1; i < block.endIndex; i++) {
             const n = tree.children[i]
             if (n.type === 'list') {
-              listIdx = i
+              existingListIdx = i
               break
             }
             if (n.type === 'thematicBreak') break
             if (n.type === 'paragraph' && toString(n).match(/^\*\*.+\*\*/)) break
           }
+          if (existingListIdx !== null) break
+        }
 
-          const existingList = listIdx !== null ? tree.children[listIdx] : null
-          if (existingList && existingList.type === 'list' && parsed && parsed.type === 'list') {
+        if (existingListIdx !== null) {
+          // Appendi il nuovo item alla lista esistente
+          const existingList = tree.children[existingListIdx]
+          if (existingList.type === 'list') {
             existingList.children.push(...parsed.children)
-          } else if (parsed && parsed.type === 'list') {
-            tree.children.splice(impattoIdx + 1, 0, parsed)
           }
+        } else if (impattoIndices.length > 0) {
+          // Nessuna lista trovata: inserisci dopo l'ultimo nodo Impatto
+          const lastImpattoIdx = impattoIndices[impattoIndices.length - 1]
+          tree.children.splice(lastImpattoIdx + 1, 0, parsed)
         } else {
-          // Crea la sezione Impatto prima della fine del blocco
+          // Nessun nodo Impatto: crea label e lista prima del thematicBreak
           const sectionMd = `**Impatto**\n${newItemMd}`
           const sectionNodes = parseMarkdown(sectionMd).children
           tree.children.splice(block.endIndex, 0, ...sectionNodes)

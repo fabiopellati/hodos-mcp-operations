@@ -64,25 +64,37 @@ export function registerAttivitaReadTools(): void {
       'Restituisce il blocco completo della voce.',
     schema: z.object({
       unita: z.string(),
-      bl_id: z.number()
+      bl_id: z.string()
     }),
     category: 'conditional',
     requiredEnrichments: ['fasi-p0-p4'],
     handler: async (params: unknown): Promise<ToolResult> => {
       const { unita, bl_id } = z.object({
         unita: z.string(),
-        bl_id: z.number()
+        bl_id: z.string()
       }).parse(params)
       validateStrings({ unita })
 
+      const blMatch = bl_id.match(/^BL-(\d+)$/)
+      if (!blMatch) {
+        return {
+          content: [{
+            type: 'text',
+            text: `Formato bl_id non valido: "${bl_id}". Atteso formato BL-N (es. "BL-3").`
+          }],
+          isError: true
+        }
+      }
+      const blNum = parseInt(blMatch[1], 10)
+
       const tree = await readAndParse(attivitaPath(unita))
-      const block = findVoceByBlId(tree, bl_id)
+      const block = findVoceByBlId(tree, blNum)
 
       if (!block) {
         return {
           content: [{
             type: 'text',
-            text: `Voce BL-${bl_id} non trovata nell'unità "${unita}".`
+            text: `Voce ${bl_id} non trovata nell'unità "${unita}".`
           }],
           isError: true
         }

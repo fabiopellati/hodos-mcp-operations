@@ -1,13 +1,12 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
 import { validateStrings, validateEnum } from '../../operations/validate.js'
-import { atomicFileOperation } from '../../operations/atomic.js'
+import { readRaw, replaceRange } from '../../operations/atomic.js'
 import { parseMarkdown } from '../../parser/markdown.js'
 import { findSectionByHeading } from '../../parser/sections.js'
 import { findRfcFile } from './read.js'
-import type { Root } from 'mdast'
 
 const basePath = process.env.OPERA_BASE_PATH || '/opera'
 const rfcDir = join(basePath, 'rfc')
@@ -186,10 +185,9 @@ async function handleUpdateRfc(params: unknown): Promise<ToolResult> {
 
   try {
     const filePath = await findRfcFile(parsed.questione_id)
+    const content = await readRaw(filePath)
 
-    // Verifica che la Response non sia compilata leggendo il file raw
-    const rawContent = await readFile(filePath, 'utf-8')
-    if (isResponseCompiled(rawContent)) {
+    if (isResponseCompiled(content)) {
       return {
         content: [{
           type: 'text',
@@ -199,23 +197,23 @@ async function handleUpdateRfc(params: unknown): Promise<ToolResult> {
       }
     }
 
-    await atomicFileOperation(filePath, (tree: Root): Root => {
-      const section = findSectionByHeading(tree, headingText, 2)
-      if (!section) {
-        throw new Error(
-          `Sezione "${headingText}" non trovata nel file RFC`
-        )
-      }
+    const tree = parseMarkdown(content)
+    const section = findSectionByHeading(tree, headingText, 2)
+    if (!section) {
+      throw new Error(
+        `Sezione "${headingText}" non trovata nel file RFC`
+      )
+    }
 
-      // Sostituisce il contenuto della sezione (tutto fra heading e fine sezione)
-      const newContentNodes = parseMarkdown(parsed.contenuto).children
-      const newChildren = [
-        ...tree.children.slice(0, section.startIndex + 1),
-        ...newContentNodes,
-        ...tree.children.slice(section.endIndex)
-      ]
-      return { ...tree, children: newChildren }
-    })
+    // L'heading occupa dalla startOffset alla fine della riga di heading.
+    // Il contenuto della sezione parte dopo l'heading node.
+    const headingNode = tree.children[section.startIndex]
+    const contentStart = headingNode.position?.end.offset ?? section.startOffset
+    const contentEnd = section.endOffset
+
+    const newContent = `\n\n${parsed.contenuto}\n\n`
+    const updated = replaceRange(content, contentStart, contentEnd, newContent)
+    await writeFile(filePath, updated, 'utf-8')
 
     return {
       content: [{
@@ -261,9 +259,9 @@ async function handleWriteResponseRfc(params: unknown): Promise<ToolResult> {
 
   try {
     const filePath = await findRfcFile(parsed.questione_id)
+    const content = await readRaw(filePath)
 
-    const rawContent = await readFile(filePath, 'utf-8')
-    if (isResponseCompiled(rawContent)) {
+    if (isResponseCompiled(content)) {
       return {
         content: [{
           type: 'text',
@@ -273,11 +271,8 @@ async function handleWriteResponseRfc(params: unknown): Promise<ToolResult> {
       }
     }
 
-    // Approccio string-based: cerca il marker "## Response RFC" nel testo raw
-    // e sostituisce tutto da quel punto in poi. L'approccio AST puo' fallire
-    // silenziosamente con determinati layout del documento.
     const responseMarker = '## Response RFC'
-    const markerIndex = rawContent.indexOf(responseMarker)
+    const markerIndex = content.indexOf(responseMarker)
     if (markerIndex === -1) {
       return {
         content: [{
@@ -307,7 +302,7 @@ ${parsed.lavoro}
 
 ${parsed.deviazioni}
 `
-    const updatedContent = rawContent.slice(0, markerIndex) + newResponseContent
+    const updatedContent = content.slice(0, markerIndex) + newResponseContent
     await writeFile(filePath, updatedContent, 'utf-8')
 
     return {

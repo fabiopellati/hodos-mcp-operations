@@ -1,12 +1,12 @@
 import path from 'node:path'
-import { readFile, writeFile } from 'node:fs/promises'
+import { writeFile } from 'node:fs/promises'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
-import { readAndParse } from '../../operations/atomic.js'
+import { readRaw, insertAt } from '../../operations/atomic.js'
+import { parseMarkdown } from '../../parser/markdown.js'
 import { getHeadingText } from '../../parser/sections.js'
 import { validateStrings, validateEnum } from '../../operations/validate.js'
 import { findVoceByBlId } from './read.js'
-import type { Heading } from 'mdast'
 
 const basePath = process.env.OPERA_BASE_PATH || '/opera'
 
@@ -51,7 +51,7 @@ export function registerAttivitaWriteTools(): void {
       if (note) validateStrings({ note })
 
       const filePath = attivitaPath(unita)
-      const content = await readFile(filePath, 'utf-8')
+      const content = await readRaw(filePath)
       const nextNum = contaVoci(content) + 1
 
       let block = `\n## BL-${nextNum} — ${titolo}\n`
@@ -117,7 +117,8 @@ export function registerAttivitaWriteTools(): void {
       const blNum = parseInt(blMatch[1], 10)
 
       const filePath = attivitaPath(unita)
-      const tree = await readAndParse(filePath)
+      const content = await readRaw(filePath)
+      const tree = parseMarkdown(content)
       const block = findVoceByBlId(tree, blNum)
 
       if (!block) {
@@ -130,48 +131,27 @@ export function registerAttivitaWriteTools(): void {
         }
       }
 
-      // Verifica che non sia già chiusa
-      for (let i = block.startIndex; i < block.endIndex; i++) {
-        const node = tree.children[i]
-        if (node.type === 'heading' && node.depth === 3) {
-          if (getHeadingText(node).startsWith('Consegna')) {
-            return {
-              content: [{
-                type: 'text',
-                text: `La voce ${bl_id} è già chiusa.`
-              }],
-              isError: true
-            }
-          }
+      // Verifica che non sia già chiusa cercando "### Consegna" nel range
+      const voceSlice = content.slice(block.startOffset, block.endOffset)
+      if (/^### Consegna/m.test(voceSlice)) {
+        return {
+          content: [{
+            type: 'text',
+            text: `La voce ${bl_id} è già chiusa.`
+          }],
+          isError: true
         }
       }
 
-      // Inserisce la sezione Consegna operando sul testo raw per
-      // evitare riformattazioni indesiderate del parser
-      const content = await readFile(filePath, 'utf-8')
-      const lines = content.split('\n')
-
-      // Trova la riga di inserimento: prima del prossimo heading h2 o fine file
-      // Cerchiamo l'heading h2 successivo partendo dalla posizione nel file
-      const voceHeading = tree.children[block.startIndex]
-      const startLine = voceHeading.position?.start.line ?? 1
-
-      let insertLine = lines.length
-      // Cerca il prossimo heading h2 dopo la voce corrente
-      if (block.endIndex < tree.children.length) {
-        const nextNode = tree.children[block.endIndex]
-        if (nextNode.position) {
-          insertLine = nextNode.position.start.line - 1
-        }
-      }
-
+      // Inserisci la sezione Consegna prima della fine del blocco
+      // (prima del prossimo heading h2 o fine file)
       const consegna =
         `\n### Consegna [${data}]\n\n` +
         `**Conformità**: ${conformita}\n\n` +
         `${descrizione}\n`
 
-      lines.splice(insertLine, 0, consegna)
-      await writeFile(filePath, lines.join('\n'), 'utf-8')
+      const modified = insertAt(content, block.endOffset, consegna)
+      await writeFile(filePath, modified, 'utf-8')
 
       return {
         content: [{

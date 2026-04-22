@@ -1,8 +1,8 @@
 import path from 'node:path'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
-import { readAndParse } from '../../operations/atomic.js'
-import { stringifyMarkdown } from '../../parser/markdown.js'
+import { readRaw } from '../../operations/atomic.js'
+import { parseMarkdown } from '../../parser/markdown.js'
 import { getHeadingText } from '../../parser/sections.js'
 import { validateStrings } from '../../operations/validate.js'
 import type { Root, Heading } from 'mdast'
@@ -13,11 +13,28 @@ function attivitaPath(unita: string): string {
   return path.join(basePath, 'documenti', 'unita', unita, 'attivita.md')
 }
 
-/** Cerca heading h2 che corrisponde a BL-{N} */
-function findVoceByBlId(
+/** Offset di inizio di un nodo */
+function nodeStart(node: { position?: { start: { offset?: number } } }): number {
+  return node.position?.start.offset ?? 0
+}
+
+/** Offset di fine di un nodo */
+function nodeEnd(node: { position?: { end: { offset?: number } } }): number {
+  return node.position?.end.offset ?? 0
+}
+
+export interface VoceRange {
+  startIndex: number
+  endIndex: number
+  startOffset: number
+  endOffset: number
+}
+
+/** Cerca heading h2 che corrisponde a BL-{N} e restituisce offset */
+export function findVoceByBlId(
   tree: Root,
   blId: number
-): { startIndex: number; endIndex: number } | null {
+): VoceRange | null {
   const prefix = `BL-${blId}`
   const children = tree.children
 
@@ -36,25 +53,24 @@ function findVoceByBlId(
       }
     }
 
-    return { startIndex: i, endIndex }
+    return {
+      startIndex: i,
+      endIndex,
+      startOffset: nodeStart(node),
+      endOffset: endIndex < children.length
+        ? nodeStart(children[endIndex])
+        : tree.position?.end.offset ?? 0
+    }
   }
 
   return null
 }
 
-/** Verifica se una voce contiene la sottosezione "### Consegna" */
-function isChiusa(tree: Root, start: number, end: number): boolean {
-  for (let i = start; i < end; i++) {
-    const node = tree.children[i]
-    if (node.type === 'heading' && node.depth === 3) {
-      const text = getHeadingText(node)
-      if (text.startsWith('Consegna')) return true
-    }
-  }
-  return false
+/** Verifica se nel range della stringa è presente "### Consegna" */
+function isChiusa(content: string, startOffset: number, endOffset: number): boolean {
+  const slice = content.slice(startOffset, endOffset)
+  return /^### Consegna/m.test(slice)
 }
-
-export { findVoceByBlId }
 
 export function registerAttivitaReadTools(): void {
   registerTool({
@@ -87,7 +103,8 @@ export function registerAttivitaReadTools(): void {
       }
       const blNum = parseInt(blMatch[1], 10)
 
-      const tree = await readAndParse(attivitaPath(unita))
+      const content = await readRaw(attivitaPath(unita))
+      const tree = parseMarkdown(content)
       const block = findVoceByBlId(tree, blNum)
 
       if (!block) {
@@ -100,12 +117,8 @@ export function registerAttivitaReadTools(): void {
         }
       }
 
-      const subtree: Root = {
-        type: 'root',
-        children: tree.children.slice(block.startIndex, block.endIndex)
-      }
       return {
-        content: [{ type: 'text', text: stringifyMarkdown(subtree) }]
+        content: [{ type: 'text', text: content.slice(block.startOffset, block.endOffset) }]
       }
     }
   })
@@ -122,7 +135,8 @@ export function registerAttivitaReadTools(): void {
       const { unita } = z.object({ unita: z.string() }).parse(params)
       validateStrings({ unita })
 
-      const tree = await readAndParse(attivitaPath(unita))
+      const content = await readRaw(attivitaPath(unita))
+      const tree = parseMarkdown(content)
 
       const voci: Array<{ id: string; titolo: string; stato: string }> = []
 
@@ -143,7 +157,12 @@ export function registerAttivitaReadTools(): void {
           }
         }
 
-        const stato = isChiusa(tree, i, endIndex) ? 'chiusa' : 'aperta'
+        const startOffset = nodeStart(node)
+        const endOffset = endIndex < tree.children.length
+          ? nodeStart(tree.children[endIndex])
+          : tree.position?.end.offset ?? content.length
+
+        const stato = isChiusa(content, startOffset, endOffset) ? 'chiusa' : 'aperta'
         voci.push({ id: `BL-${match[1]}`, titolo: match[2], stato })
       }
 

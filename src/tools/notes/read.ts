@@ -1,27 +1,22 @@
 import path from 'node:path'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
-import { readAndParse } from '../../operations/atomic.js'
-import { stringifyMarkdown } from '../../parser/markdown.js'
+import { readRaw } from '../../operations/atomic.js'
+import { parseMarkdown } from '../../parser/markdown.js'
 import { findIndexTable, getHeadingText } from '../../parser/sections.js'
-import type { Root, Table } from 'mdast'
+import type { Root } from 'mdast'
 
 const basePath = process.env.OPERA_BASE_PATH || '/opera'
 const notesPath = () => path.join(basePath, 'notes.md')
 
-function serializeTable(table: Table): string {
-  const tree: Root = { type: 'root', children: [table] }
-  return stringifyMarkdown(tree)
-}
-
 /**
- * Trova il blocco di una nota per ID.
+ * Trova il blocco di una nota per ID (offset nella stringa originale).
  * Il blocco va dall'heading h2 al prossimo heading h2 o alla fine del documento.
  */
 export function findNotaBlock(
   tree: Root,
   id: string
-): { startIndex: number; endIndex: number } | null {
+): { startIndex: number; endIndex: number; startOffset: number; endOffset: number } | null {
   const children = tree.children
 
   for (let i = 0; i < children.length; i++) {
@@ -38,7 +33,12 @@ export function findNotaBlock(
       }
     }
 
-    return { startIndex: i, endIndex }
+    const startOffset = node.position?.start.offset ?? 0
+    const endOffset = endIndex < children.length
+      ? (children[endIndex].position?.start.offset ?? 0)
+      : (tree.position?.end.offset ?? 0)
+
+    return { startIndex: i, endIndex, startOffset, endOffset }
   }
 
   return null
@@ -53,7 +53,8 @@ export function registerNotesReadTools(): void {
     category: 'base',
     requiredEnrichments: [],
     handler: async (): Promise<ToolResult> => {
-      const tree = await readAndParse(notesPath())
+      const content = await readRaw(notesPath())
+      const tree = parseMarkdown(content)
       const result = findIndexTable(tree)
       if (!result) {
         return {
@@ -62,7 +63,7 @@ export function registerNotesReadTools(): void {
         }
       }
       return {
-        content: [{ type: 'text', text: serializeTable(result.table) }]
+        content: [{ type: 'text', text: content.slice(result.startOffset, result.endOffset) }]
       }
     }
   })
@@ -76,7 +77,8 @@ export function registerNotesReadTools(): void {
     requiredEnrichments: [],
     handler: async (params: unknown): Promise<ToolResult> => {
       const { id } = z.object({ id: z.string() }).parse(params)
-      const tree = await readAndParse(notesPath())
+      const content = await readRaw(notesPath())
+      const tree = parseMarkdown(content)
       const block = findNotaBlock(tree, id)
       if (!block) {
         return {
@@ -84,12 +86,8 @@ export function registerNotesReadTools(): void {
           isError: true
         }
       }
-      const subtree: Root = {
-        type: 'root',
-        children: tree.children.slice(block.startIndex, block.endIndex)
-      }
       return {
-        content: [{ type: 'text', text: stringifyMarkdown(subtree) }]
+        content: [{ type: 'text', text: content.slice(block.startOffset, block.endOffset) }]
       }
     }
   })

@@ -1,12 +1,11 @@
 import path from 'node:path'
-import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
-import { readAndParse } from '../../operations/atomic.js'
-import { stringifyMarkdown } from '../../parser/markdown.js'
+import { readRaw } from '../../operations/atomic.js'
+import { parseMarkdown } from '../../parser/markdown.js'
 import { findSectionByHeading, getHeadingText } from '../../parser/sections.js'
 import { validateStrings } from '../../operations/validate.js'
-import type { Root, Heading } from 'mdast'
+import type { Heading } from 'mdast'
 
 const basePath = process.env.OPERA_BASE_PATH || '/opera'
 
@@ -25,12 +24,6 @@ function resolveDocPath(relativePath: string): string {
   return full
 }
 
-function listHeadings(tree: Root): string[] {
-  return tree.children
-    .filter((n): n is Heading => n.type === 'heading')
-    .map(h => `${'#'.repeat(h.depth)} ${getHeadingText(h)}`)
-}
-
 export function registerFasiReadTools(): void {
   registerTool({
     name: 'read_documento',
@@ -46,7 +39,7 @@ export function registerFasiReadTools(): void {
       validateStrings({ path: relPath })
 
       const filePath = resolveDocPath(relPath)
-      const content = await readFile(filePath, 'utf-8')
+      const content = await readRaw(filePath)
       return {
         content: [{ type: 'text', text: content }]
       }
@@ -70,11 +63,14 @@ export function registerFasiReadTools(): void {
       validateStrings({ path: relPath, heading })
 
       const filePath = resolveDocPath(relPath)
-      const tree = await readAndParse(filePath)
+      const content = await readRaw(filePath)
+      const tree = parseMarkdown(content)
       const section = findSectionByHeading(tree, heading)
 
       if (!section) {
-        const available = listHeadings(tree)
+        const available = tree.children
+          .filter((n): n is Heading => n.type === 'heading')
+          .map(h => `${'#'.repeat(h.depth)} ${getHeadingText(h)}`)
         return {
           content: [{
             type: 'text',
@@ -85,12 +81,8 @@ export function registerFasiReadTools(): void {
         }
       }
 
-      const subtree: Root = {
-        type: 'root',
-        children: tree.children.slice(section.startIndex, section.endIndex)
-      }
       return {
-        content: [{ type: 'text', text: stringifyMarkdown(subtree) }]
+        content: [{ type: 'text', text: content.slice(section.startOffset, section.endOffset) }]
       }
     }
   })

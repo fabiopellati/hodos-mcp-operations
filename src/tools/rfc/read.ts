@@ -1,7 +1,8 @@
-import { readdir, readFile } from 'node:fs/promises'
+import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
+import { readRaw } from '../../operations/atomic.js'
 import { validateStrings } from '../../operations/validate.js'
 
 const basePath = process.env.OPERA_BASE_PATH || '/opera'
@@ -54,7 +55,7 @@ async function handleReadRfc(params: unknown): Promise<ToolResult> {
 
   try {
     const filePath = await findRfcFile(questione_id)
-    const content = await readFile(filePath, 'utf-8')
+    const content = await readRaw(filePath)
     return {
       content: [{ type: 'text', text: content }]
     }

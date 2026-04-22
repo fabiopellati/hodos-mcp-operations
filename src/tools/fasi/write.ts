@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
-import { atomicFileOperation } from '../../operations/atomic.js'
+import { readRaw, replaceRange } from '../../operations/atomic.js'
 import { parseMarkdown } from '../../parser/markdown.js'
 import { findSectionByHeading, getHeadingText } from '../../parser/sections.js'
 import { validateStrings, validateEnum } from '../../operations/validate.js'
@@ -186,30 +186,29 @@ export function registerFasiWriteTools(): void {
       validateStrings({ path: relPath, heading, contenuto })
 
       const filePath = resolveDocPath(relPath)
+      const content = await readRaw(filePath)
+      const tree = parseMarkdown(content)
+      const section = findSectionByHeading(tree, heading)
 
-      await atomicFileOperation(filePath, (tree) => {
-        const section = findSectionByHeading(tree, heading)
+      if (!section) {
+        const available = tree.children
+          .filter((n): n is Heading => n.type === 'heading')
+          .map(h => `${'#'.repeat(h.depth)} ${getHeadingText(h)}`)
+        throw new Error(
+          `Heading "${heading}" non trovato.\n` +
+          `Heading disponibili:\n${available.join('\n')}`
+        )
+      }
 
-        if (!section) {
-          const available = tree.children
-            .filter((n): n is Heading => n.type === 'heading')
-            .map(h => `${'#'.repeat(h.depth)} ${getHeadingText(h)}`)
-          throw new Error(
-            `Heading "${heading}" non trovato.\n` +
-            `Heading disponibili:\n${available.join('\n')}`
-          )
-        }
+      // L'heading originale va preservato: il contenuto della sezione
+      // è tra la fine dell'heading e l'inizio della sezione successiva.
+      const headingNode = tree.children[section.startIndex]
+      const bodyStart = headingNode.position?.end.offset ?? section.startOffset
+      const bodyEnd = section.endOffset
 
-        // Parsa il nuovo contenuto
-        const contentTree = parseMarkdown(contenuto.trim())
-
-        // Sostituisci tutto tra l'heading (escluso) e la fine della sezione
-        // Mantieni l'heading originale, rimuovi il vecchio contenuto, inserisci il nuovo
-        const countToRemove = section.endIndex - section.startIndex - 1
-        tree.children.splice(section.startIndex + 1, countToRemove, ...contentTree.children)
-
-        return tree
-      })
+      const newBody = '\n\n' + contenuto.trim() + '\n'
+      const modified = replaceRange(content, bodyStart, bodyEnd, newBody)
+      await writeFile(filePath, modified, 'utf-8')
 
       return {
         content: [{

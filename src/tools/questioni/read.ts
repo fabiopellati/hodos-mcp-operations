@@ -1,59 +1,29 @@
 import path from 'node:path'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
-import { readAndParse } from '../../operations/atomic.js'
-import { stringifyMarkdown } from '../../parser/markdown.js'
+import { readRaw } from '../../operations/atomic.js'
+import { parseMarkdown } from '../../parser/markdown.js'
 import {
   findIndexTable,
-  findBlockById,
-  getHeadingText
+  findBlockByHeadingId,
+  findLineByPatternInRange,
+  type BlockRange
 } from '../../parser/sections.js'
-import { validateEnum } from '../../operations/validate.js'
-import { VALID_STATES } from '../../operations/validate.js'
-import type { Root, Table, TableRow } from 'mdast'
-import { toString } from 'mdast-util-to-string'
+import { validateEnum, VALID_STATES } from '../../operations/validate.js'
 
 const basePath = process.env.OPERA_BASE_PATH || '/opera'
 const questioniPath = () => path.join(basePath, 'questioni.md')
 
-function serializeTable(table: Table): string {
-  const tree: Root = { type: 'root', children: [table] }
-  return stringifyMarkdown(tree)
-}
-
-function getCellText(row: TableRow, index: number): string {
-  if (index >= row.children.length) return ''
-  return toString(row.children[index])
-}
-
 /**
  * Trova il blocco di una questione per ID.
  * Il blocco va dall'heading h2 al thematicBreak escluso.
+ * Delega a findBlockByHeadingId da sections.ts.
  */
 function findQuestioneBlock(
-  tree: Root,
+  tree: import('mdast').Root,
   id: string
-): { startIndex: number; endIndex: number } | null {
-  const children = tree.children
-
-  for (let i = 0; i < children.length; i++) {
-    const node = children[i]
-    if (node.type !== 'heading' || node.depth !== 2) continue
-    if (!getHeadingText(node).includes(id)) continue
-
-    // Trova la fine: il prossimo thematicBreak
-    let endIndex = children.length
-    for (let j = i + 1; j < children.length; j++) {
-      if (children[j].type === 'thematicBreak') {
-        endIndex = j
-        break
-      }
-    }
-
-    return { startIndex: i, endIndex }
-  }
-
-  return null
+): BlockRange | null {
+  return findBlockByHeadingId(tree, id)
 }
 
 export { findQuestioneBlock }
@@ -67,7 +37,8 @@ export function registerQuestioniReadTools(): void {
     category: 'base',
     requiredEnrichments: [],
     handler: async (): Promise<ToolResult> => {
-      const tree = await readAndParse(questioniPath())
+      const content = await readRaw(questioniPath())
+      const tree = parseMarkdown(content)
       const result = findIndexTable(tree)
       if (!result) {
         return {
@@ -76,7 +47,10 @@ export function registerQuestioniReadTools(): void {
         }
       }
       return {
-        content: [{ type: 'text', text: serializeTable(result.table) }]
+        content: [{
+          type: 'text',
+          text: content.slice(result.startOffset, result.endOffset)
+        }]
       }
     }
   })
@@ -90,7 +64,8 @@ export function registerQuestioniReadTools(): void {
     requiredEnrichments: [],
     handler: async (params: unknown): Promise<ToolResult> => {
       const { id } = z.object({ id: z.string() }).parse(params)
-      const tree = await readAndParse(questioniPath())
+      const content = await readRaw(questioniPath())
+      const tree = parseMarkdown(content)
       const block = findQuestioneBlock(tree, id)
       if (!block) {
         return {
@@ -98,12 +73,11 @@ export function registerQuestioniReadTools(): void {
           isError: true
         }
       }
-      const subtree: Root = {
-        type: 'root',
-        children: tree.children.slice(block.startIndex, block.endIndex)
-      }
       return {
-        content: [{ type: 'text', text: stringifyMarkdown(subtree) }]
+        content: [{
+          type: 'text',
+          text: content.slice(block.startOffset, block.endOffset)
+        }]
       }
     }
   })
@@ -121,7 +95,8 @@ export function registerQuestioniReadTools(): void {
         validateEnum(stato, VALID_STATES, 'stato')
       }
 
-      const tree = await readAndParse(questioniPath())
+      const content = await readRaw(questioniPath())
+      const tree = parseMarkdown(content)
       const result = findIndexTable(tree)
       if (!result) {
         return {
@@ -130,23 +105,29 @@ export function registerQuestioniReadTools(): void {
         }
       }
 
-      const { table } = result
-      // La prima riga è l'header
-      const header = table.children[0]
-      const dataRows = table.children.slice(1)
-
-      const filtered = stato
-        ? dataRows.filter(row => getCellText(row, 2).trim() === stato)
-        : dataRows
-
-      const filteredTable: Table = {
-        type: 'table',
-        align: table.align,
-        children: [header, ...filtered] as TableRow[]
+      if (!stato) {
+        return {
+          content: [{
+            type: 'text',
+            text: content.slice(result.startOffset, result.endOffset)
+          }]
+        }
       }
 
+      // Filtra per stato: estrai header + righe che matchano
+      const tableSlice = content.slice(result.startOffset, result.endOffset)
+      const lines = tableSlice.split('\n')
+      // lines[0] = header, lines[1] = separator (---|---|---), lines[2..] = data rows
+      const filtered = lines.filter((line, i) => {
+        if (i <= 1) return true // header + separator
+        if (line.trim() === '') return false
+        // La terza colonna contiene lo stato
+        const cells = line.split('|').map(c => c.trim()).filter(c => c !== '')
+        return cells.length >= 3 && cells[2] === stato
+      })
+
       return {
-        content: [{ type: 'text', text: serializeTable(filteredTable) }]
+        content: [{ type: 'text', text: filtered.join('\n') }]
       }
     }
   })

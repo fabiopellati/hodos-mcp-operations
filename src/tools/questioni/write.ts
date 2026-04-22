@@ -1,18 +1,24 @@
 import path from 'node:path'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
-import { atomicFileOperation, readAndParse } from '../../operations/atomic.js'
-import { parseMarkdown, stringifyMarkdown } from '../../parser/markdown.js'
+import {
+  atomicFileOperation,
+  insertAt,
+  replaceRange
+} from '../../operations/atomic.js'
+import { parseMarkdown } from '../../parser/markdown.js'
 import {
   findIndexTable,
-  findInsertionPointAfterIndex,
-  getHeadingText
+  findBodyInsertOffset,
+  findFirstDataRowOffset,
+  findLineByPattern,
+  findLineByPatternInRange,
+  findLastLineByPatternInRange,
+  findBlockByHeadingId
 } from '../../parser/sections.js'
 import { validateStrings, validateEnum, VALID_STATES } from '../../operations/validate.js'
 import { formatStoriaEntry, formatCommentoHeader } from '../../enrichments/firma.js'
-import { findQuestioneBlock } from './read.js'
-import type { Root, TableRow, TableCell, Text, Paragraph, Blockquote } from 'mdast'
-import { toString } from 'mdast-util-to-string'
+import type { Root } from 'mdast'
 
 const VALID_TYPES = ['rilievo', 'revisione', 'anomalia'] as const
 
@@ -21,115 +27,55 @@ const questioniPath = () => path.join(basePath, 'questioni.md')
 
 const today = () => new Date().toISOString().slice(0, 10)
 
-function makeTextCell(text: string): TableCell {
-  return {
-    type: 'tableCell',
-    children: [{ type: 'text', value: text } as Text]
-  }
-}
-
-function makeTableRow(cells: string[]): TableRow {
-  return {
-    type: 'tableRow',
-    children: cells.map(makeTextCell)
-  }
-}
-
-/**
- * Legge il contatore "Ultima questione inserita" dal blockquote e ne estrae il numero.
- * Restituisce 0 se il contatore indica "—".
- */
-function readCounter(tree: Root, label: string): number {
-  for (const node of tree.children) {
-    if (node.type !== 'blockquote') continue
-    const text = toString(node)
-    if (!text.includes(label)) continue
-
-    const match = text.match(new RegExp(`${label}:\\s*(?:QUESTIONE-(\\d+))`))
-    if (match) return parseInt(match[1], 10)
-    return 0
-  }
-  return 0
-}
-
-/**
- * Aggiorna un contatore blockquote nel documento.
- */
-function updateCounter(tree: Root, label: string, value: string): void {
-  for (const node of tree.children) {
-    if (node.type !== 'blockquote') continue
-    const text = toString(node)
-    if (!text.includes(label)) continue
-
-    // Ricostruisce il contenuto del blockquote
-    const paragraph = node.children[0]
-    if (paragraph && paragraph.type === 'paragraph') {
-      paragraph.children = [{ type: 'text', value: `${label}: ${value}` } as Text]
-    }
-    return
-  }
-}
-
 function padId(num: number): string {
   return String(num).padStart(3, '0')
 }
 
 /**
- * Trova la posizione di inserimento del blocco corpo:
- * subito dopo il blockquote dei contatori, prima della prima questione esistente.
- * Il flusso del documento è: titolo → heading Indice → tabella indice → blockquote → corpo questioni.
- * Le nuove questioni vanno inserite subito dopo il blockquote (prepend-only).
+ * Legge il contatore "Ultima questione inserita" dal blockquote nella stringa.
+ * Restituisce 0 se il contatore indica "---" o non e' presente.
  */
-function findBodyInsertionPoint(tree: Root): number {
-  // Cerca il blockquote dei contatori e inserisce subito dopo
-  for (let i = 0; i < tree.children.length; i++) {
-    if (tree.children[i].type === 'blockquote') {
-      return i + 1
-    }
-  }
-  // Fallback: dopo la tabella indice
-  const insertionAfterIndex = findInsertionPointAfterIndex(tree)
-  return insertionAfterIndex
+function readCounterFromString(content: string, label: string): number {
+  const pattern = new RegExp(`${label}:\\s*(?:QUESTIONE-(\\d+))`)
+  const m = content.match(pattern)
+  if (m) return parseInt(m[1], 10)
+  return 0
 }
 
 /**
- * Cerca la sezione per label dentro un blocco questione, restituendo
- * l'indice relativo all'interno del blocco.
- * Restituisce l'ULTIMA occorrenza trovata per gestire il caso in cui
- * remark abbia generato duplicati durante round-trip precedenti.
+ * Sostituisce il valore di un contatore blockquote nella stringa.
+ * Restituisce la stringa aggiornata.
  */
-function findSectionInBlock(
-  children: Root['children'],
-  startIndex: number,
-  endIndex: number,
-  label: string
-): number | null {
-  let lastFound: number | null = null
-  for (let i = startIndex; i < endIndex; i++) {
-    const node = children[i]
-    if (node.type === 'paragraph') {
-      const text = toString(node)
-      if (text.startsWith(`**${label}**`)) lastFound = i
-    }
-  }
-  return lastFound
+function updateCounterInString(
+  content: string,
+  label: string,
+  value: string
+): string {
+  const pattern = new RegExp(`(${label}:\\s*)([^\\n]*)`)
+  return content.replace(pattern, `$1${value}`)
 }
 
 /**
- * Conta i commenti esistenti in un blocco.
+ * Trova il thematicBreak (---) alla fine di un blocco questione.
+ * Il blocco da findBlockByHeadingId termina prima del thematicBreak;
+ * il break si trova al endOffset del blocco.
  */
-function countComments(
-  children: Root['children'],
-  startIndex: number,
-  endIndex: number
-): number {
-  let count = 0
-  for (let i = startIndex; i < endIndex; i++) {
-    const text = toString(children[i])
-    const matches = text.match(/COMMENTO-\d+/g)
-    if (matches) count = Math.max(count, ...matches.map(m => parseInt(m.replace('COMMENTO-', ''), 10)))
+function findThematicBreakAfterBlock(
+  content: string,
+  tree: Root,
+  blockEndOffset: number
+): { start: number; end: number } | null {
+  // Il thematicBreak dovrebbe iniziare a blockEndOffset
+  // (findBlockByHeadingId termina all'inizio del thematicBreak)
+  const slice = content.slice(blockEndOffset, blockEndOffset + 20)
+  const m = slice.match(/^-{3,}\n?/)
+  if (m) {
+    return {
+      start: blockEndOffset,
+      end: blockEndOffset + m[0].length
+    }
   }
-  return count
+  return null
 }
 
 export function registerQuestioniWriteTools(): void {
@@ -167,37 +113,48 @@ export function registerQuestioniWriteTools(): void {
       const parsed = schema.parse(params)
       validateStrings({ titolo: parsed.titolo, descrizione: parsed.descrizione })
 
-      await atomicFileOperation(questioniPath(), (tree) => {
-        const lastNum = readCounter(tree, 'Ultima questione inserita')
+      let createdId = ''
+
+      await atomicFileOperation(questioniPath(), (content, tree) => {
+        const lastNum = readCounterFromString(content, 'Ultima questione inserita')
         const nextNum = lastNum + 1
         const id = `QUESTIONE-${padId(nextNum)}`
+        createdId = id
         const date = today()
 
-        // Inserisci riga nell'indice (in cima, dopo l'header)
-        const indexResult = findIndexTable(tree)
-        if (indexResult) {
-          const { table } = indexResult
-          const newRow = makeTableRow([id, parsed.titolo, 'open'])
-          // Inserisce dopo l'header (riga 0)
-          table.children.splice(1, 0, newRow)
+        let result = content
+
+        // 1. Inserisci riga nell'indice (in cima, dopo l'header)
+        const indexInfo = findIndexTable(tree)
+        if (indexInfo) {
+          const rowOffset = findFirstDataRowOffset(indexInfo.table)
+          const newRow = `| ${id} | ${parsed.titolo} | open |\n`
+          result = insertAt(result, rowOffset, newRow)
+          // Dopo l'inserimento, tutti gli offset successivi sono spostati
+          // di newRow.length. Ricalcoliamo l'AST per le operazioni successive.
         }
 
-        // Costruisci il blocco corpo come markdown e parsalo
-        let body = `## ${id} — ${parsed.titolo}\n\n`
+        // Ri-parsa dopo l'inserimento della riga
+        const tree2 = parseMarkdown(result)
+
+        // 2. Inserisci il blocco corpo dopo il separatore dell'indice
+        const bodyOffset = findBodyInsertOffset(tree2)
+
+        let body = `\n\n## ${id} — ${parsed.titolo}\n\n`
         body += `**Tipo**: ${parsed.tipo}\n`
         body += `**Stato**: open\n\n`
-        body += `**Storia**\n`
+        body += `**Storia**\n\n`
         body += `${formatStoriaEntry(date, 'open', parsed.titolo, parsed.firma)}\n\n`
         body += `**Descrizione**\n\n`
         body += `${parsed.descrizione}\n\n`
-        body += `**Domande aperte**\n`
+        body += `**Domande aperte**\n\n`
         if (parsed.domande_aperte && parsed.domande_aperte.length > 0) {
           for (const d of parsed.domande_aperte) {
             body += `- [ ] ${d}\n`
           }
         }
         body += `\n`
-        body += `**Impatto**\n`
+        body += `**Impatto**\n\n`
         if (parsed.impatto && parsed.impatto.length > 0) {
           for (const imp of parsed.impatto) {
             body += `- ${imp.artefatto} — ${imp.descrizione}\n`
@@ -207,19 +164,22 @@ export function registerQuestioniWriteTools(): void {
         if (parsed.collegate && parsed.collegate.length > 0) {
           body += `**Questioni collegate**: ${parsed.collegate.join(', ')}\n\n`
         }
+        body += `---\n`
 
-        const bodyTree = parseMarkdown(body)
-        const insertPoint = findBodyInsertionPoint(tree)
-        tree.children.splice(insertPoint, 0, ...bodyTree.children, { type: 'thematicBreak' })
+        result = insertAt(result, bodyOffset, body)
 
-        // Aggiorna contatore
-        updateCounter(tree, 'Ultima questione inserita', `${id} — ${date}.`)
+        // 3. Aggiorna contatore
+        result = updateCounterInString(
+          result,
+          'Ultima questione inserita',
+          `${id} — ${date}.`
+        )
 
-        return tree
+        return result
       })
 
       return {
-        content: [{ type: 'text', text: `Questione creata.` }]
+        content: [{ type: 'text', text: `Questione ${createdId} creata.` }]
       }
     }
   })
@@ -246,68 +206,93 @@ export function registerQuestioniWriteTools(): void {
       validateEnum(nuovo_stato, VALID_STATES, 'nuovo_stato')
       validateStrings({ motivazione })
 
-      await atomicFileOperation(questioniPath(), (tree) => {
+      await atomicFileOperation(questioniPath(), (content, tree) => {
         const date = today()
+        let result = content
 
-        // 1. Aggiorna riga indice
-        const indexResult = findIndexTable(tree)
-        if (indexResult) {
-          const { table } = indexResult
-          for (let r = 1; r < table.children.length; r++) {
-            const row = table.children[r]
-            const cellId = toString(row.children[0])
-            if (cellId.trim() === id) {
-              row.children[2] = makeTextCell(nuovo_stato)
-              break
-            }
+        // 1. Aggiorna riga indice: trova la riga con l'ID nella tabella
+        const indexInfo = findIndexTable(tree)
+        if (indexInfo) {
+          const tableRow = findLineByPatternInRange(
+            result,
+            new RegExp(`\\|\\s*${id}\\s*\\|`),
+            indexInfo.startOffset,
+            indexInfo.endOffset
+          )
+          if (tableRow) {
+            // Sostituisci lo stato nella riga (terza colonna)
+            const oldLine = result.slice(tableRow.lineStart, tableRow.lineEnd - 1)
+            const newLine = oldLine.replace(
+              /\|\s*([a-z-]+)\s*\|(\s*)$/,
+              `| ${nuovo_stato} |$2`
+            )
+            result = replaceRange(result, tableRow.lineStart, tableRow.lineEnd - 1, newLine)
           }
         }
 
-        // 2. Aggiorna campo Stato e aggiunge riga in Storia nel corpo
-        const block = findQuestioneBlock(tree, id)
+        // Ri-parsa dopo modifica indice
+        const tree2 = parseMarkdown(result)
+
+        // 2. Trova il blocco della questione
+        const block = findBlockByHeadingId(tree2, id)
         if (!block) throw new Error(`Questione ${id} non trovata.`)
 
-        for (let i = block.startIndex; i < block.endIndex; i++) {
-          const node = tree.children[i]
-          if (node.type !== 'paragraph') continue
-          const text = toString(node)
+        // 3. Aggiorna campo **Stato** nel corpo
+        const statoLine = findLineByPatternInRange(
+          result,
+          /\*\*Stato\*\*:\s*[a-z-]+/,
+          block.startOffset,
+          block.endOffset
+        )
+        if (statoLine) {
+          const oldText = result.slice(statoLine.lineStart, statoLine.lineEnd - 1)
+          const newText = oldText.replace(
+            /\*\*Stato\*\*:\s*[a-z-]+/,
+            `**Stato**: ${nuovo_stato}`
+          )
+          result = replaceRange(result, statoLine.lineStart, statoLine.lineEnd - 1, newText)
+        }
 
-          // Aggiorna **Stato** — potrebbe trovarsi in un paragrafo multi-riga
-          // insieme a **Tipo**, quindi cerchiamo la sottostringa
-          if (text.includes('**Stato**') || text.includes('Stato')) {
-            const fullMd = stringifyMarkdown({ type: 'root', children: [node] })
-            const replaced = fullMd.replace(
-              /\*\*Stato\*\*:\s*[a-z-]+/,
-              `**Stato**: ${nuovo_stato}`
-            )
-            if (replaced !== fullMd) {
-              const reparsed = parseMarkdown(replaced.trim()).children[0]
-              if (reparsed) {
-                tree.children[i] = reparsed
-              }
-            }
-          }
+        // Ri-parsa per trovare la sezione Storia con offset corretti
+        const tree3 = parseMarkdown(result)
+        const block2 = findBlockByHeadingId(tree3, id)
+        if (!block2) throw new Error(`Questione ${id} non trovata dopo aggiornamento stato.`)
 
-          // Aggiunge riga in **Storia**
-          if (text.includes('**Storia**') || text.includes('Storia')) {
-            // La lista segue questo paragrafo
-            const listNode = tree.children[i + 1]
-            if (listNode && listNode.type === 'list') {
-              const newItemText = formatStoriaEntry(date, nuovo_stato, motivazione, firma)
-              const newItem = parseMarkdown(newItemText).children[0]
-              if (newItem && newItem.type === 'list') {
-                listNode.children.push(...newItem.children)
-              }
-            }
+        // 4. Aggiungi riga in Storia: trova l'ultima riga della lista Storia
+        const storiaLabel = findLineByPatternInRange(
+          result,
+          /\*\*Storia\*\*/,
+          block2.startOffset,
+          block2.endOffset
+        )
+        if (storiaLabel) {
+          // Trova l'ultima riga della lista (formato: "- YYYY-MM-DD stato ...")
+          const lastEntry = findLastLineByPatternInRange(
+            result,
+            /^- \d{4}-\d{2}-\d{2}\s/,
+            storiaLabel.lineEnd,
+            block2.endOffset
+          )
+          const newEntry = formatStoriaEntry(date, nuovo_stato, motivazione, firma)
+          if (lastEntry) {
+            // Inserisci dopo l'ultima riga della lista
+            result = insertAt(result, lastEntry.lineEnd, `${newEntry}\n`)
+          } else {
+            // Nessuna entry esistente, inserisci dopo il label Storia
+            result = insertAt(result, storiaLabel.lineEnd, `\n${newEntry}\n`)
           }
         }
 
-        // 3. Se closed, aggiorna contatore chiusura
+        // 5. Se closed, aggiorna contatore chiusura
         if (nuovo_stato === 'closed') {
-          updateCounter(tree, 'Ultima questione chiusa', `${id} — ${date}.`)
+          result = updateCounterInString(
+            result,
+            'Ultima questione chiusa',
+            `${id} — ${date}.`
+          )
         }
 
-        return tree
+        return result
       })
 
       return {
@@ -335,30 +320,43 @@ export function registerQuestioniWriteTools(): void {
       }).parse(params)
       validateStrings({ testo })
 
-      await atomicFileOperation(questioniPath(), (tree) => {
-        const block = findQuestioneBlock(tree, id)
+      await atomicFileOperation(questioniPath(), (content, tree) => {
+        const block = findBlockByHeadingId(tree, id)
         if (!block) throw new Error(`Questione ${id} non trovata.`)
 
         const date = today()
-        const lastComment = countComments(tree.children, block.startIndex, block.endIndex)
-        const commentId = `COMMENTO-${padId(lastComment + 1)}`
 
-        // Verifica se esiste già la sezione Commenti
-        const commentiIdx = findSectionInBlock(tree.children, block.startIndex, block.endIndex, 'Commenti')
+        // Conta commenti esistenti nel blocco
+        const blockSlice = content.slice(block.startOffset, block.endOffset)
+        const commentMatches = blockSlice.match(/COMMENTO-(\d+)/g) || []
+        const maxComment = commentMatches.reduce((max, m) => {
+          const n = parseInt(m.replace('COMMENTO-', ''), 10)
+          return n > max ? n : max
+        }, 0)
+        const commentId = `COMMENTO-${padId(maxComment + 1)}`
 
-        const commentBody = `${formatCommentoHeader(commentId, date, firma)}\n${testo}`
-        const commentNodes = parseMarkdown(commentBody).children
+        let result = content
 
-        if (commentiIdx !== null) {
-          // Inserisce prima della fine del blocco (prima del thematicBreak)
-          tree.children.splice(block.endIndex, 0, ...commentNodes)
+        // Verifica se esiste la sezione Commenti nel blocco
+        const commentiLabel = findLineByPatternInRange(
+          result,
+          /\*\*Commenti\*\*/,
+          block.startOffset,
+          block.endOffset
+        )
+
+        const commentBody = `\n${formatCommentoHeader(commentId, date, firma)}\n${testo}\n`
+
+        if (commentiLabel) {
+          // Inserisci prima del thematicBreak (alla fine del blocco)
+          result = insertAt(result, block.endOffset, commentBody)
         } else {
-          // Crea sezione Commenti e inserisce prima del thematicBreak
-          const sectionHeader = parseMarkdown('**Commenti**').children
-          tree.children.splice(block.endIndex, 0, ...sectionHeader, ...commentNodes)
+          // Crea sezione Commenti e inserisci prima del thematicBreak
+          const sectionBlock = `\n**Commenti**\n${commentBody}`
+          result = insertAt(result, block.endOffset, sectionBlock)
         }
 
-        return tree
+        return result
       })
 
       return {
@@ -384,30 +382,40 @@ export function registerQuestioniWriteTools(): void {
       }).parse(params)
       validateStrings({ domanda })
 
-      await atomicFileOperation(questioniPath(), (tree) => {
-        const block = findQuestioneBlock(tree, id)
+      await atomicFileOperation(questioniPath(), (content, tree) => {
+        const block = findBlockByHeadingId(tree, id)
         if (!block) throw new Error(`Questione ${id} non trovata.`)
 
-        // Trova la sezione Domande aperte e la lista che la segue
-        for (let i = block.startIndex; i < block.endIndex; i++) {
-          const node = tree.children[i]
-          if (node.type !== 'paragraph') continue
-          if (!toString(node).startsWith('**Domande aperte**')) continue
+        let result = content
 
-          const listNode = tree.children[i + 1]
-          const newItemMd = `- [ ] ${domanda}`
-          const parsed = parseMarkdown(newItemMd).children[0]
+        // Cerca la sezione **Domande aperte** nel blocco
+        const label = findLineByPatternInRange(
+          result,
+          /\*\*Domande aperte\*\*/,
+          block.startOffset,
+          block.endOffset
+        )
 
-          if (listNode && listNode.type === 'list' && parsed && parsed.type === 'list') {
-            listNode.children.push(...parsed.children)
-          } else if (parsed && parsed.type === 'list') {
-            // Non c'è ancora una lista, la inseriamo dopo il paragrafo
-            tree.children.splice(i + 1, 0, parsed)
-          }
-          break
+        if (!label) throw new Error(`Sezione "Domande aperte" non trovata in ${id}.`)
+
+        // Trova l'ultima checkbox nella lista sotto Domande aperte
+        const lastItem = findLastLineByPatternInRange(
+          result,
+          /^- \[[ x]\] /,
+          label.lineEnd,
+          block.endOffset
+        )
+
+        const newItem = `- [ ] ${domanda}\n`
+
+        if (lastItem) {
+          result = insertAt(result, lastItem.lineEnd, newItem)
+        } else {
+          // Nessun item esistente: inserisci dopo il label (con riga vuota)
+          result = insertAt(result, label.lineEnd, `\n${newItem}`)
         }
 
-        return tree
+        return result
       })
 
       return {
@@ -435,59 +443,43 @@ export function registerQuestioniWriteTools(): void {
       }).parse(params)
       validateStrings({ artefatto, descrizione })
 
-      await atomicFileOperation(questioniPath(), (tree) => {
-        const block = findQuestioneBlock(tree, id)
+      await atomicFileOperation(questioniPath(), (content, tree) => {
+        const block = findBlockByHeadingId(tree, id)
         if (!block) throw new Error(`Questione ${id} non trovata.`)
 
-        const newItemMd = `- ${artefatto} — ${descrizione}`
-        const parsed = parseMarkdown(newItemMd).children[0]
-        if (!parsed || parsed.type !== 'list') {
-          throw new Error('Errore nel parsing del nuovo item Impatto.')
-        }
+        let result = content
+        const newItem = `- ${artefatto} — ${descrizione}\n`
 
-        // Cerca TUTTI i nodi nel blocco che contengono **Impatto** nel testo
-        const impattoIndices: number[] = []
-        for (let i = block.startIndex; i < block.endIndex; i++) {
-          const node = tree.children[i]
-          const text = toString(node)
-          if (text.includes('**Impatto**') || (node.type === 'paragraph' && text.startsWith('Impatto'))) {
-            impattoIndices.push(i)
-          }
-        }
+        // Cerca la sezione **Impatto** nel blocco
+        const label = findLineByPatternInRange(
+          result,
+          /\*\*Impatto\*\*/,
+          block.startOffset,
+          block.endOffset
+        )
 
-        // Cerca la PRIMA lista che segue uno qualsiasi dei nodi Impatto
-        let existingListIdx: number | null = null
-        for (const idx of impattoIndices) {
-          for (let i = idx + 1; i < block.endIndex; i++) {
-            const n = tree.children[i]
-            if (n.type === 'list') {
-              existingListIdx = i
-              break
-            }
-            if (n.type === 'thematicBreak') break
-            if (n.type === 'paragraph' && toString(n).match(/^\*\*.+\*\*/)) break
-          }
-          if (existingListIdx !== null) break
-        }
+        if (label) {
+          // Trova l'ultima riga della lista sotto Impatto
+          const lastItem = findLastLineByPatternInRange(
+            result,
+            /^- /,
+            label.lineEnd,
+            block.endOffset
+          )
 
-        if (existingListIdx !== null) {
-          // Appendi il nuovo item alla lista esistente
-          const existingList = tree.children[existingListIdx]
-          if (existingList.type === 'list') {
-            existingList.children.push(...parsed.children)
+          if (lastItem) {
+            result = insertAt(result, lastItem.lineEnd, newItem)
+          } else {
+            // Nessun item esistente: inserisci dopo il label
+            result = insertAt(result, label.lineEnd, `\n${newItem}`)
           }
-        } else if (impattoIndices.length > 0) {
-          // Nessuna lista trovata: inserisci dopo l'ultimo nodo Impatto
-          const lastImpattoIdx = impattoIndices[impattoIndices.length - 1]
-          tree.children.splice(lastImpattoIdx + 1, 0, parsed)
         } else {
-          // Nessun nodo Impatto: crea label e lista prima del thematicBreak
-          const sectionMd = `**Impatto**\n${newItemMd}`
-          const sectionNodes = parseMarkdown(sectionMd).children
-          tree.children.splice(block.endIndex, 0, ...sectionNodes)
+          // Crea la sezione Impatto prima del thematicBreak
+          const sectionBlock = `\n**Impatto**\n\n${newItem}`
+          result = insertAt(result, block.endOffset, sectionBlock)
         }
 
-        return tree
+        return result
       })
 
       return {
@@ -512,33 +504,41 @@ export function registerQuestioniWriteTools(): void {
         questione_ids: z.array(z.string())
       }).parse(params)
 
-      await atomicFileOperation(questioniPath(), (tree) => {
-        const block = findQuestioneBlock(tree, id)
+      await atomicFileOperation(questioniPath(), (content, tree) => {
+        const block = findBlockByHeadingId(tree, id)
         if (!block) throw new Error(`Questione ${id} non trovata.`)
 
-        // Cerca campo Questioni collegate esistente
-        const collegateIdx = findSectionInBlock(
-          tree.children, block.startIndex, block.endIndex, 'Questioni collegate'
+        let result = content
+
+        // Cerca campo **Questioni collegate** nel blocco
+        const collegateLabel = findLineByPatternInRange(
+          result,
+          /\*\*Questioni collegate\*\*:\s*(.*)/,
+          block.startOffset,
+          block.endOffset
         )
 
-        const newValue = `**Questioni collegate**: ${questione_ids.join(', ')}`
-
-        if (collegateIdx !== null) {
-          // Aggiorna il campo esistente: aggiungi i nuovi ID
-          const existing = toString(tree.children[collegateIdx])
-          const match = existing.match(/\*\*Questioni collegate\*\*:\s*(.+)/)
-          const existingIds = match ? match[1].split(',').map(s => s.trim()) : []
+        if (collegateLabel) {
+          // Aggiorna: merge degli ID esistenti con i nuovi
+          const existingIds = collegateLabel.match[1]
+            .split(',')
+            .map(s => s.trim())
+            .filter(s => s !== '')
           const allIds = [...new Set([...existingIds, ...questione_ids])]
-          tree.children[collegateIdx] = parseMarkdown(
-            `**Questioni collegate**: ${allIds.join(', ')}`
-          ).children[0]
+          const newLine = `**Questioni collegate**: ${allIds.join(', ')}`
+          result = replaceRange(
+            result,
+            collegateLabel.lineStart,
+            collegateLabel.lineEnd - 1,
+            newLine
+          )
         } else {
-          // Inserisci prima della fine del blocco
-          const node = parseMarkdown(newValue).children[0]
-          tree.children.splice(block.endIndex, 0, node)
+          // Inserisci prima del thematicBreak (fine del blocco)
+          const newLine = `\n**Questioni collegate**: ${questione_ids.join(', ')}\n`
+          result = insertAt(result, block.endOffset, newLine)
         }
 
-        return tree
+        return result
       })
 
       return {
@@ -557,31 +557,36 @@ export function registerQuestioniWriteTools(): void {
     handler: async (params: unknown): Promise<ToolResult> => {
       const { id } = z.object({ id: z.string() }).parse(params)
 
-      await atomicFileOperation(questioniPath(), (tree) => {
-        // Rimuovi riga dall'indice
-        const indexResult = findIndexTable(tree)
-        if (indexResult) {
-          const { table } = indexResult
-          const rowIdx = table.children.findIndex(
-            (row, i) => i > 0 && toString(row.children[0]).trim() === id
+      await atomicFileOperation(questioniPath(), (content, tree) => {
+        let result = content
+
+        // 1. Rimuovi riga dall'indice
+        const indexInfo = findIndexTable(tree)
+        if (indexInfo) {
+          const tableRow = findLineByPatternInRange(
+            result,
+            new RegExp(`\\|\\s*${id}\\s*\\|`),
+            indexInfo.startOffset,
+            indexInfo.endOffset
           )
-          if (rowIdx > 0) {
-            table.children.splice(rowIdx, 1)
+          if (tableRow) {
+            result = replaceRange(result, tableRow.lineStart, tableRow.lineEnd, '')
           }
         }
 
-        // Rimuovi blocco corpo (heading h2 fino al thematicBreak incluso)
-        const block = findQuestioneBlock(tree, id)
+        // Ri-parsa dopo rimozione riga indice
+        const tree2 = parseMarkdown(result)
+
+        // 2. Rimuovi blocco corpo (heading h2 fino al thematicBreak incluso)
+        const block = findBlockByHeadingId(tree2, id)
         if (block) {
-          // Includi anche il thematicBreak finale
-          const endWithBreak = block.endIndex < tree.children.length &&
-            tree.children[block.endIndex].type === 'thematicBreak'
-            ? block.endIndex + 1
-            : block.endIndex
-          tree.children.splice(block.startIndex, endWithBreak - block.startIndex)
+          // Il thematicBreak si trova a block.endOffset
+          const breakInfo = findThematicBreakAfterBlock(result, tree2, block.endOffset)
+          const removeEnd = breakInfo ? breakInfo.end : block.endOffset
+          result = replaceRange(result, block.startOffset, removeEnd, '')
         }
 
-        return tree
+        return result
       })
 
       return {
@@ -614,44 +619,45 @@ export function registerQuestioniWriteTools(): void {
         ? filePath
         : path.join(basePath, filePath)
 
-      await atomicFileOperation(fullPath, (tree) => {
-        // Trova la sezione
-        let sectionStart = -1
-        for (let i = 0; i < tree.children.length; i++) {
-          const node = tree.children[i]
-          if (node.type === 'paragraph' && toString(node).startsWith(`**${sezione}**`)) {
-            sectionStart = i
+      await atomicFileOperation(fullPath, (content, tree) => {
+        let result = content
+
+        // Trova la sezione per label **sezione**
+        const label = findLineByPattern(result, new RegExp(`\\*\\*${sezione}\\*\\*`))
+        if (!label) throw new Error(`Sezione "${sezione}" non trovata.`)
+
+        // Trova tutte le righe checkbox dopo il label
+        let count = 0
+        const lines = result.slice(label.lineEnd).split('\n')
+        let offset = label.lineEnd
+        for (const line of lines) {
+          const m = line.match(/^- \[[ x]\] /)
+          if (m) {
+            count++
+            if (count === indice) {
+              // Trovata la riga target
+              const checkboxMatch = line.match(/^- \[ \] /)
+              if (!checkboxMatch) {
+                // Gia' spuntata, niente da fare
+                return result
+              }
+              const lineStart = offset
+              const lineEnd = offset + line.length
+              let newLine = line.replace('- [ ] ', '- [x] ')
+              if (nota) {
+                newLine += ` — ${nota}`
+              }
+              result = replaceRange(result, lineStart, lineEnd, newLine)
+              return result
+            }
+          } else if (line.trim() !== '' && !line.match(/^- /)) {
+            // Usciti dalla lista
             break
           }
-        }
-        if (sectionStart === -1) throw new Error(`Sezione "${sezione}" non trovata.`)
-
-        // Cerca la lista che segue
-        const listNode = tree.children[sectionStart + 1]
-        if (!listNode || listNode.type !== 'list') {
-          throw new Error(`Nessuna lista trovata nella sezione "${sezione}".`)
+          offset += line.length + 1
         }
 
-        const itemIdx = indice - 1
-        if (itemIdx >= listNode.children.length) {
-          throw new Error(`Indice ${indice} fuori range (${listNode.children.length} elementi).`)
-        }
-
-        const item = listNode.children[itemIdx]
-        if (item.checked === false) {
-          item.checked = true
-          if (nota) {
-            const itemText = toString(item)
-            const textNode = item.children[0]
-            if (textNode && textNode.type === 'paragraph') {
-              textNode.children.push(
-                { type: 'text', value: ` — ${nota}` } as Text
-              )
-            }
-          }
-        }
-
-        return tree
+        throw new Error(`Indice ${indice} fuori range (${count} elementi).`)
       })
 
       return {
@@ -685,36 +691,36 @@ export function registerQuestioniWriteTools(): void {
         ? filePath
         : path.join(basePath, filePath)
 
-      await atomicFileOperation(fullPath, (tree) => {
-        let sectionStart = -1
-        for (let i = 0; i < tree.children.length; i++) {
-          const node = tree.children[i]
-          if (node.type === 'paragraph' && toString(node).startsWith(`**${sezione}**`)) {
-            sectionStart = i
+      await atomicFileOperation(fullPath, (content, tree) => {
+        let result = content
+
+        // Trova la sezione per label **sezione**
+        const label = findLineByPattern(result, new RegExp(`\\*\\*${sezione}\\*\\*`))
+        if (!label) throw new Error(`Sezione "${sezione}" non trovata.`)
+
+        // Trova la riga alla posizione indice
+        let count = 0
+        const lines = result.slice(label.lineEnd).split('\n')
+        let offset = label.lineEnd
+        for (const line of lines) {
+          const m = line.match(/^- /)
+          if (m) {
+            count++
+            if (count === indice) {
+              const lineStart = offset
+              const lineEnd = offset + line.length
+              const newLine = `${line} — ${nota}`
+              result = replaceRange(result, lineStart, lineEnd, newLine)
+              return result
+            }
+          } else if (line.trim() !== '' && !line.startsWith('  ')) {
+            // Usciti dalla lista
             break
           }
-        }
-        if (sectionStart === -1) throw new Error(`Sezione "${sezione}" non trovata.`)
-
-        const listNode = tree.children[sectionStart + 1]
-        if (!listNode || listNode.type !== 'list') {
-          throw new Error(`Nessuna lista trovata nella sezione "${sezione}".`)
+          offset += line.length + 1
         }
 
-        const itemIdx = indice - 1
-        if (itemIdx >= listNode.children.length) {
-          throw new Error(`Indice ${indice} fuori range (${listNode.children.length} elementi).`)
-        }
-
-        const item = listNode.children[itemIdx]
-        const textNode = item.children[0]
-        if (textNode && textNode.type === 'paragraph') {
-          textNode.children.push(
-            { type: 'text', value: ` — ${nota}` } as Text
-          )
-        }
-
-        return tree
+        throw new Error(`Indice ${indice} fuori range (${count} elementi).`)
       })
 
       return {

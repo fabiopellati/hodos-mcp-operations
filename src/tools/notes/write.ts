@@ -1,17 +1,18 @@
 import path from 'node:path'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
-import { atomicFileOperation } from '../../operations/atomic.js'
-import { parseMarkdown } from '../../parser/markdown.js'
+import { atomicFileOperation, insertAt, replaceRange } from '../../operations/atomic.js'
 import {
   findIndexTable,
-  findInsertionPointAfterIndex
+  findFirstDataRowOffset,
+  findBodyInsertOffset,
+  findLineByPattern,
+  findLineByPatternInRange,
+  findLastLineByPatternInRange
 } from '../../parser/sections.js'
 import { validateStrings } from '../../operations/validate.js'
 import { formatCommentoHeader, formatNotaAutore } from '../../enrichments/firma.js'
 import { findNotaBlock } from './read.js'
-import type { Root, TableRow, TableCell, Text } from 'mdast'
-import { toString } from 'mdast-util-to-string'
 
 const basePath = process.env.OPERA_BASE_PATH || '/opera'
 const notesPath = () => path.join(basePath, 'notes.md')
@@ -22,78 +23,26 @@ function padId(num: number): string {
   return String(num).padStart(3, '0')
 }
 
-function makeTextCell(text: string): TableCell {
-  return {
-    type: 'tableCell',
-    children: [{ type: 'text', value: text } as Text]
-  }
-}
-
-function makeTableRow(cells: string[]): TableRow {
-  return {
-    type: 'tableRow',
-    children: cells.map(makeTextCell)
-  }
-}
-
-function readNotaCounter(tree: Root): number {
-  for (const node of tree.children) {
-    if (node.type !== 'blockquote') continue
-    const text = toString(node)
-    if (!text.includes('Ultima nota inserita')) continue
-
-    const match = text.match(/NOTA-(\d+)/)
-    if (match) return parseInt(match[1], 10)
-    return 0
-  }
+function readNotaCounterFromString(content: string): number {
+  const match = content.match(/>\s*Ultima nota inserita:\s*NOTA-(\d+)/)
+  if (match) return parseInt(match[1], 10)
   return 0
 }
 
-function updateNotaCounter(tree: Root, value: string): void {
-  for (const node of tree.children) {
-    if (node.type !== 'blockquote') continue
-    const text = toString(node)
-    if (!text.includes('Ultima nota inserita')) continue
-
-    const paragraph = node.children[0]
-    if (paragraph && paragraph.type === 'paragraph') {
-      paragraph.children = [{
-        type: 'text',
-        value: `Ultima nota inserita: ${value}`
-      } as Text]
-    }
-    return
-  }
+function updateNotaCounterInString(content: string, newValue: string): string {
+  return content.replace(
+    /(>\s*Ultima nota inserita:\s*).*/,
+    `$1${newValue}`
+  )
 }
 
-function countComments(
-  children: Root['children'],
-  startIndex: number,
-  endIndex: number
-): number {
-  let count = 0
-  for (let i = startIndex; i < endIndex; i++) {
-    const text = toString(children[i])
-    const matches = text.match(/COMMENTO-\d+/g)
-    if (matches) {
-      count = Math.max(
-        count,
-        ...matches.map(m => parseInt(m.replace('COMMENTO-', ''), 10))
-      )
-    }
-  }
-  return count
-}
-
-function findBodyInsertionPoint(tree: Root): number {
-  const insertionAfterIndex = findInsertionPointAfterIndex(tree)
-
-  for (let i = insertionAfterIndex; i < tree.children.length; i++) {
-    if (tree.children[i].type === 'thematicBreak') {
-      return i + 1
-    }
-  }
-  return tree.children.length
+function countCommentsInRange(content: string, start: number, end: number): number {
+  const slice = content.slice(start, end)
+  const matches = slice.match(/COMMENTO-(\d+)/g)
+  if (!matches) return 0
+  return Math.max(
+    ...matches.map(m => parseInt(m.replace('COMMENTO-', ''), 10))
+  )
 }
 
 export function registerNotesWriteTools(): void {
@@ -116,34 +65,35 @@ export function registerNotesWriteTools(): void {
       }).parse(params)
       validateStrings({ descrizione, corpo })
 
-      await atomicFileOperation(notesPath(), (tree) => {
-        const lastNum = readNotaCounter(tree)
+      await atomicFileOperation(notesPath(), (content, tree) => {
+        const lastNum = readNotaCounterFromString(content)
         const nextNum = lastNum + 1
         const id = `NOTA-${padId(nextNum)}`
         const date = today()
 
-        // Inserisci riga nell'indice (in cima, dopo l'header)
+        let result = content
+
+        // 1. Inserisci riga nell'indice (in cima, dopo l'header)
         const indexResult = findIndexTable(tree)
         if (indexResult) {
-          const { table } = indexResult
-          const newRow = makeTableRow([id, descrizione, date])
-          table.children.splice(1, 0, newRow)
+          const rowOffset = findFirstDataRowOffset(indexResult.table)
+          const newRow = `| ${id} | ${descrizione} | ${date} |\n`
+          result = insertAt(result, rowOffset, newRow)
+          // Dopo l'inserimento, tutti gli offset successivi shiftano di newRow.length
+          const shift = newRow.length
+
+          // 2. Inserisci blocco corpo dopo l'indice e il separatore
+          const bodyOffset = findBodyInsertOffset(tree) + shift
+          const autore = formatNotaAutore(firma)
+          const autoreBlock = autore ? `${autore}\n\n` : ''
+          const bodyBlock = `\n## ${id} — ${date} — ${descrizione}\n\n${autoreBlock}${corpo}\n`
+          result = insertAt(result, bodyOffset, bodyBlock)
         }
 
-        // Costruisci blocco corpo
-        const autore = formatNotaAutore(firma)
-        const autoreBlock = autore ? `${autore}\n\n` : ''
-        const body = `## ${id} — ${date} — ${descrizione}\n\n${autoreBlock}${corpo}\n`
-        const bodyTree = parseMarkdown(body)
+        // 3. Aggiorna contatore
+        result = updateNotaCounterInString(result, `${id} — ${date}.`)
 
-        // Inserisci dopo l'indice e il separatore
-        const insertPoint = findBodyInsertionPoint(tree)
-        tree.children.splice(insertPoint, 0, ...bodyTree.children)
-
-        // Aggiorna contatore
-        updateNotaCounter(tree, `${id} — ${date}.`)
-
-        return tree
+        return result
       })
 
       return {
@@ -171,35 +121,31 @@ export function registerNotesWriteTools(): void {
       }).parse(params)
       validateStrings({ testo })
 
-      await atomicFileOperation(notesPath(), (tree) => {
+      await atomicFileOperation(notesPath(), (content, tree) => {
         const block = findNotaBlock(tree, id)
         if (!block) throw new Error(`Nota ${id} non trovata.`)
 
         const date = today()
-        const lastComment = countComments(tree.children, block.startIndex, block.endIndex)
+        const lastComment = countCommentsInRange(
+          content, block.startOffset, block.endOffset
+        )
         const commentId = `COMMENTO-${padId(lastComment + 1)}`
 
-        // Verifica se esiste già la sezione Commenti
-        let commentiExists = false
-        for (let i = block.startIndex; i < block.endIndex; i++) {
-          if (tree.children[i].type === 'paragraph' &&
-              toString(tree.children[i]).startsWith('**Commenti**')) {
-            commentiExists = true
-            break
-          }
+        const commentBody = `\n${formatCommentoHeader(commentId, date, firma)}\n${testo}\n`
+
+        // Verifica se esiste già la sezione Commenti nel blocco
+        const commentiLine = findLineByPatternInRange(
+          content, /^\*\*Commenti\*\*/, block.startOffset, block.endOffset
+        )
+
+        if (commentiLine) {
+          // Inserisci il commento prima della fine del blocco
+          return insertAt(content, block.endOffset, commentBody)
         }
 
-        const commentBody = `${formatCommentoHeader(commentId, date, firma)}\n${testo}`
-        const commentNodes = parseMarkdown(commentBody).children
-
-        if (commentiExists) {
-          tree.children.splice(block.endIndex, 0, ...commentNodes)
-        } else {
-          const sectionHeader = parseMarkdown('**Commenti**').children
-          tree.children.splice(block.endIndex, 0, ...sectionHeader, ...commentNodes)
-        }
-
-        return tree
+        // Se la sezione Commenti non esiste, creala prima della fine del blocco
+        const sectionBlock = `\n**Commenti**\n${commentBody}`
+        return insertAt(content, block.endOffset, sectionBlock)
       })
 
       return {

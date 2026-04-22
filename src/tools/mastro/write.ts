@@ -1,9 +1,8 @@
 import path from 'node:path'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
-import { atomicFileOperation } from '../../operations/atomic.js'
-import { parseMarkdown } from '../../parser/markdown.js'
-import { findInsertionPointAfterTitle } from '../../parser/sections.js'
+import { atomicFileOperation, insertAt } from '../../operations/atomic.js'
+import { findAfterTitleOffset } from '../../parser/sections.js'
 import { validateStrings } from '../../operations/validate.js'
 import { isCompressioneActive, isPercorsoRequired } from '../../enrichments/compressione.js'
 
@@ -52,34 +51,37 @@ export function registerMastroWriteTools(): void {
         }
       }
 
-      await atomicFileOperation(mastroPath(), (tree) => {
+      await atomicFileOperation(mastroPath(), (content, tree) => {
         const date = today()
+        const offset = findAfterTitleOffset(tree)
 
-        let body = `## ${date} — Chiusura ${parsed.questione_id}: ${parsed.titolo}\n\n`
-        body += `**Questione**: ${parsed.questione_id} — ${parsed.titolo}\n\n`
+        let entry = `\n\n## ${date} — Chiusura ${parsed.questione_id}: ${parsed.titolo}\n\n`
+        entry += `**Questione**: ${parsed.questione_id} — ${parsed.titolo}\n\n`
 
         if (parsed.percorso && !isCompressioneActive()) {
-          body += `**Percorso**\n\n${parsed.percorso}\n\n`
+          entry += `**Percorso**\n\n${parsed.percorso}\n\n`
         }
 
-        body += `**Decisioni prese**\n\n${parsed.decisioni}\n\n`
-        body += `**Impatto**\n\n${parsed.impatto}\n`
+        entry += `**Decisioni prese**\n\n${parsed.decisioni}\n\n`
+        entry += `**Impatto**\n\n${parsed.impatto}\n\n---\n`
 
-        const bodyTree = parseMarkdown(body)
-        const insertPoint = findInsertionPointAfterTitle(tree)
-
-        // Inserisci entry + thematicBreak dopo il titolo h1
-        const toInsert = [...bodyTree.children, { type: 'thematicBreak' as const }]
-        tree.children.splice(insertPoint, 0, ...toInsert)
+        let result = insertAt(content, offset, entry)
 
         // Rimuovi eventuale thematicBreak duplicato subito dopo quello appena inserito
-        const afterInsertedBreak = insertPoint + toInsert.length
-        if (afterInsertedBreak < tree.children.length &&
-            tree.children[afterInsertedBreak].type === 'thematicBreak') {
-          tree.children.splice(afterInsertedBreak, 1)
+        const insertedEnd = offset + entry.length
+        const afterInsert = result.slice(insertedEnd).replace(/^\n*/, '')
+        if (afterInsert.startsWith('---')) {
+          const breakStart = insertedEnd + (result.length - insertedEnd - afterInsert.length)
+          const breakEnd = breakStart + 3
+          // Rimuovi anche eventuali newline attorno al --- duplicato
+          let removeEnd = breakEnd
+          while (removeEnd < result.length && result[removeEnd] === '\n') {
+            removeEnd++
+          }
+          result = result.slice(0, breakStart) + result.slice(removeEnd)
         }
 
-        return tree
+        return result
       })
 
       return {

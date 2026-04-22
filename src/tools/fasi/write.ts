@@ -3,7 +3,11 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
+import { atomicFileOperation } from '../../operations/atomic.js'
+import { parseMarkdown } from '../../parser/markdown.js'
+import { findSectionByHeading, getHeadingText } from '../../parser/sections.js'
 import { validateStrings, validateEnum } from '../../operations/validate.js'
+import type { Heading } from 'mdast'
 
 const basePath = process.env.OPERA_BASE_PATH || '/opera'
 
@@ -66,6 +70,20 @@ const SEZIONI_PER_DOCUMENTO: Record<string, string[]> = {
     'Ordine di sviluppo',
     'Milestone'
   ]
+}
+
+function resolveDocPath(relativePath: string): string {
+  const normalized = path.normalize(relativePath)
+  if (!normalized.startsWith('documenti/') && !normalized.startsWith('documenti\\')) {
+    throw new Error(
+      `Il path deve essere sotto "documenti/". Ricevuto: ${relativePath}`
+    )
+  }
+  const full = path.resolve(basePath, normalized)
+  if (!full.startsWith(path.join(basePath, 'documenti'))) {
+    throw new Error(`Path non valido: ${relativePath}`)
+  }
+  return full
 }
 
 function generateScaffold(numeroNome: string): string {
@@ -137,6 +155,66 @@ export function registerFasiWriteTools(): void {
         content: [{
           type: 'text',
           text: `Documento creato: ${FASE_DIRS[fase]}/${numero_nome}.md`
+        }]
+      }
+    }
+  })
+
+  registerTool({
+    name: 'write_sezione',
+    description:
+      'Scrive il contenuto di una sezione in un documento di fase. ' +
+      'Sostituisce tutto il contenuto tra l\'heading indicato e il prossimo ' +
+      'heading di pari livello. ' +
+      'path: relativo a OPERA_BASE_PATH (es. "documenti/definizione/1-obiettivi.md"). ' +
+      'heading: testo dell\'heading della sezione da scrivere. ' +
+      'contenuto: markdown da inserire come corpo della sezione.',
+    schema: z.object({
+      path: z.string(),
+      heading: z.string(),
+      contenuto: z.string()
+    }),
+    category: 'conditional',
+    requiredEnrichments: ['fasi-p0-p4'],
+    handler: async (params: unknown): Promise<ToolResult> => {
+      const { path: relPath, heading, contenuto } = z.object({
+        path: z.string(),
+        heading: z.string(),
+        contenuto: z.string()
+      }).parse(params)
+
+      validateStrings({ path: relPath, heading, contenuto })
+
+      const filePath = resolveDocPath(relPath)
+
+      await atomicFileOperation(filePath, (tree) => {
+        const section = findSectionByHeading(tree, heading)
+
+        if (!section) {
+          const available = tree.children
+            .filter((n): n is Heading => n.type === 'heading')
+            .map(h => `${'#'.repeat(h.depth)} ${getHeadingText(h)}`)
+          throw new Error(
+            `Heading "${heading}" non trovato.\n` +
+            `Heading disponibili:\n${available.join('\n')}`
+          )
+        }
+
+        // Parsa il nuovo contenuto
+        const contentTree = parseMarkdown(contenuto.trim())
+
+        // Sostituisci tutto tra l'heading (escluso) e la fine della sezione
+        // Mantieni l'heading originale, rimuovi il vecchio contenuto, inserisci il nuovo
+        const countToRemove = section.endIndex - section.startIndex - 1
+        tree.children.splice(section.startIndex + 1, countToRemove, ...contentTree.children)
+
+        return tree
+      })
+
+      return {
+        content: [{
+          type: 'text',
+          text: `Sezione "${heading}" aggiornata in ${relPath}.`
         }]
       }
     }

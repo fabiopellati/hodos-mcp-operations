@@ -76,23 +76,27 @@ function padId(num: number): string {
 
 /**
  * Trova la posizione di inserimento del blocco corpo:
- * dopo l'indice e il primo thematicBreak, prima della prima questione esistente.
+ * subito dopo il blockquote dei contatori, prima della prima questione esistente.
+ * Il flusso del documento è: titolo → heading Indice → tabella indice → blockquote → corpo questioni.
+ * Le nuove questioni vanno inserite subito dopo il blockquote (prepend-only).
  */
 function findBodyInsertionPoint(tree: Root): number {
-  const insertionAfterIndex = findInsertionPointAfterIndex(tree)
-
-  // Il punto è subito dopo il primo thematicBreak dopo l'indice
-  for (let i = insertionAfterIndex; i < tree.children.length; i++) {
-    if (tree.children[i].type === 'thematicBreak') {
+  // Cerca il blockquote dei contatori e inserisce subito dopo
+  for (let i = 0; i < tree.children.length; i++) {
+    if (tree.children[i].type === 'blockquote') {
       return i + 1
     }
   }
-  return tree.children.length
+  // Fallback: dopo la tabella indice
+  const insertionAfterIndex = findInsertionPointAfterIndex(tree)
+  return insertionAfterIndex
 }
 
 /**
  * Cerca la sezione per label dentro un blocco questione, restituendo
  * l'indice relativo all'interno del blocco.
+ * Restituisce l'ULTIMA occorrenza trovata per gestire il caso in cui
+ * remark abbia generato duplicati durante round-trip precedenti.
  */
 function findSectionInBlock(
   children: Root['children'],
@@ -100,14 +104,15 @@ function findSectionInBlock(
   endIndex: number,
   label: string
 ): number | null {
+  let lastFound: number | null = null
   for (let i = startIndex; i < endIndex; i++) {
     const node = children[i]
     if (node.type === 'paragraph') {
       const text = toString(node)
-      if (text.startsWith(`**${label}**`)) return i
+      if (text.startsWith(`**${label}**`)) lastFound = i
     }
   }
-  return null
+  return lastFound
 }
 
 /**
@@ -267,13 +272,24 @@ export function registerQuestioniWriteTools(): void {
           if (node.type !== 'paragraph') continue
           const text = toString(node)
 
-          // Aggiorna **Stato**
-          if (text.startsWith('**Stato**')) {
-            node.children = [{ type: 'text', value: `**Stato**: ${nuovo_stato}` } as Text]
+          // Aggiorna **Stato** — potrebbe trovarsi in un paragrafo multi-riga
+          // insieme a **Tipo**, quindi cerchiamo la sottostringa
+          if (text.includes('**Stato**') || text.includes('Stato')) {
+            const fullMd = stringifyMarkdown({ type: 'root', children: [node] })
+            const replaced = fullMd.replace(
+              /\*\*Stato\*\*:\s*[a-z-]+/,
+              `**Stato**: ${nuovo_stato}`
+            )
+            if (replaced !== fullMd) {
+              const reparsed = parseMarkdown(replaced.trim()).children[0]
+              if (reparsed) {
+                tree.children[i] = reparsed
+              }
+            }
           }
 
           // Aggiunge riga in **Storia**
-          if (text.startsWith('**Storia**')) {
+          if (text.includes('**Storia**') || text.includes('Storia')) {
             // La lista segue questo paragrafo
             const listNode = tree.children[i + 1]
             if (listNode && listNode.type === 'list') {
@@ -429,11 +445,24 @@ export function registerQuestioniWriteTools(): void {
         const impattoIdx = findSectionInBlock(tree.children, block.startIndex, block.endIndex, 'Impatto')
 
         if (impattoIdx !== null) {
-          const listNode = tree.children[impattoIdx + 1]
           const parsed = parseMarkdown(newItemMd).children[0]
 
-          if (listNode && listNode.type === 'list' && parsed && parsed.type === 'list') {
-            listNode.children.push(...parsed.children)
+          // Cerca una lista nei nodi successivi al paragrafo Impatto,
+          // fermandosi al prossimo paragrafo bold o thematicBreak
+          let listIdx: number | null = null
+          for (let i = impattoIdx + 1; i < block.endIndex; i++) {
+            const n = tree.children[i]
+            if (n.type === 'list') {
+              listIdx = i
+              break
+            }
+            if (n.type === 'thematicBreak') break
+            if (n.type === 'paragraph' && toString(n).match(/^\*\*.+\*\*/)) break
+          }
+
+          const existingList = listIdx !== null ? tree.children[listIdx] : null
+          if (existingList && existingList.type === 'list' && parsed && parsed.type === 'list') {
+            existingList.children.push(...parsed.children)
           } else if (parsed && parsed.type === 'list') {
             tree.children.splice(impattoIdx + 1, 0, parsed)
           }

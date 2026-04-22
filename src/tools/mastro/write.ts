@@ -1,10 +1,11 @@
 import path from 'node:path'
 import { z } from 'zod'
-import { registerTool, getActiveEnrichments, type ToolResult } from '../../server.js'
+import { registerTool, type ToolResult } from '../../server.js'
 import { atomicFileOperation } from '../../operations/atomic.js'
 import { parseMarkdown } from '../../parser/markdown.js'
 import { findInsertionPointAfterTitle } from '../../parser/sections.js'
 import { validateStrings } from '../../operations/validate.js'
+import { isCompressioneActive, isPercorsoRequired } from '../../enrichments/compressione.js'
 
 const basePath = process.env.OPERA_BASE_PATH || '/opera'
 const mastroPath = () => path.join(basePath, 'mastro.md')
@@ -40,11 +41,7 @@ export function registerMastroWriteTools(): void {
         impatto: parsed.impatto
       })
 
-      // Il percorso è obbligatorio a meno che compressione-mastro sia attivo
-      const enrichments = getActiveEnrichments()
-      const compressioneAttiva = enrichments.includes('compressione-mastro')
-
-      if (!parsed.percorso && !compressioneAttiva) {
+      if (!parsed.percorso && isPercorsoRequired()) {
         return {
           content: [{
             type: 'text',
@@ -61,7 +58,7 @@ export function registerMastroWriteTools(): void {
         let body = `## ${date} — Chiusura ${parsed.questione_id}: ${parsed.titolo}\n\n`
         body += `**Questione**: ${parsed.questione_id} — ${parsed.titolo}\n\n`
 
-        if (parsed.percorso) {
+        if (parsed.percorso && !isCompressioneActive()) {
           body += `**Percorso**\n\n${parsed.percorso}\n\n`
         }
 

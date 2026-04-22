@@ -8,6 +8,7 @@ import {
   findInsertionPointAfterIndex
 } from '../../parser/sections.js'
 import { validateStrings } from '../../operations/validate.js'
+import { formatCommentoHeader, formatNotaAutore } from '../../enrichments/firma.js'
 import { findNotaBlock } from './read.js'
 import type { Root, TableRow, TableCell, Text } from 'mdast'
 import { toString } from 'mdast-util-to-string'
@@ -102,14 +103,16 @@ export function registerNotesWriteTools(): void {
       'Crea una nuova nota in notes.md con riga indice, blocco corpo e aggiornamento contatore.',
     schema: z.object({
       descrizione: z.string(),
-      corpo: z.string()
+      corpo: z.string(),
+      firma: z.string().optional()
     }),
     category: 'base',
     requiredEnrichments: [],
     handler: async (params: unknown): Promise<ToolResult> => {
-      const { descrizione, corpo } = z.object({
+      const { descrizione, corpo, firma } = z.object({
         descrizione: z.string(),
-        corpo: z.string()
+        corpo: z.string(),
+        firma: z.string().optional()
       }).parse(params)
       validateStrings({ descrizione, corpo })
 
@@ -128,7 +131,9 @@ export function registerNotesWriteTools(): void {
         }
 
         // Costruisci blocco corpo
-        const body = `## ${id} — ${date} — ${descrizione}\n\n${corpo}\n`
+        const autore = formatNotaAutore(firma)
+        const autoreBlock = autore ? `${autore}\n\n` : ''
+        const body = `## ${id} — ${date} — ${descrizione}\n\n${autoreBlock}${corpo}\n`
         const bodyTree = parseMarkdown(body)
 
         // Inserisci dopo l'indice e il separatore
@@ -153,14 +158,16 @@ export function registerNotesWriteTools(): void {
       'Aggiunge un commento (COMMENTO-NNN) in fondo a una nota.',
     schema: z.object({
       id: z.string(),
-      testo: z.string()
+      testo: z.string(),
+      firma: z.string().optional()
     }),
     category: 'base',
     requiredEnrichments: [],
     handler: async (params: unknown): Promise<ToolResult> => {
-      const { id, testo } = z.object({
+      const { id, testo, firma } = z.object({
         id: z.string(),
-        testo: z.string()
+        testo: z.string(),
+        firma: z.string().optional()
       }).parse(params)
       validateStrings({ testo })
 
@@ -182,7 +189,7 @@ export function registerNotesWriteTools(): void {
           }
         }
 
-        const commentBody = `${commentId} — ${date}\n${testo}`
+        const commentBody = `${formatCommentoHeader(commentId, date, firma)}\n${testo}`
         const commentNodes = parseMarkdown(commentBody).children
 
         if (commentiExists) {

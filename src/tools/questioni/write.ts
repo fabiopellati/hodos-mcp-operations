@@ -9,6 +9,7 @@ import {
   getHeadingText
 } from '../../parser/sections.js'
 import { validateStrings, validateEnum, VALID_STATES } from '../../operations/validate.js'
+import { formatStoriaEntry, formatCommentoHeader } from '../../enrichments/firma.js'
 import { findQuestioneBlock } from './read.js'
 import type { Root, TableRow, TableCell, Text, Paragraph, Blockquote } from 'mdast'
 import { toString } from 'mdast-util-to-string'
@@ -140,7 +141,8 @@ export function registerQuestioniWriteTools(): void {
         artefatto: z.string(),
         descrizione: z.string()
       })).optional(),
-      collegate: z.array(z.string()).optional()
+      collegate: z.array(z.string()).optional(),
+      firma: z.string().optional()
     }),
     category: 'base',
     requiredEnrichments: [],
@@ -154,7 +156,8 @@ export function registerQuestioniWriteTools(): void {
           artefatto: z.string(),
           descrizione: z.string()
         })).optional(),
-        collegate: z.array(z.string()).optional()
+        collegate: z.array(z.string()).optional(),
+        firma: z.string().optional()
       })
       const parsed = schema.parse(params)
       validateStrings({ titolo: parsed.titolo, descrizione: parsed.descrizione })
@@ -179,7 +182,7 @@ export function registerQuestioniWriteTools(): void {
         body += `**Tipo**: ${parsed.tipo}\n`
         body += `**Stato**: open\n\n`
         body += `**Storia**\n`
-        body += `- ${date} open — ${parsed.titolo}\n\n`
+        body += `${formatStoriaEntry(date, 'open', parsed.titolo, parsed.firma)}\n\n`
         body += `**Descrizione**\n\n`
         body += `${parsed.descrizione}\n\n`
         body += `**Domande aperte**\n`
@@ -223,15 +226,17 @@ export function registerQuestioniWriteTools(): void {
     schema: z.object({
       id: z.string(),
       nuovo_stato: z.string(),
-      motivazione: z.string()
+      motivazione: z.string(),
+      firma: z.string().optional()
     }),
     category: 'base',
     requiredEnrichments: [],
     handler: async (params: unknown): Promise<ToolResult> => {
-      const { id, nuovo_stato, motivazione } = z.object({
+      const { id, nuovo_stato, motivazione, firma } = z.object({
         id: z.string(),
         nuovo_stato: z.string(),
-        motivazione: z.string()
+        motivazione: z.string(),
+        firma: z.string().optional()
       }).parse(params)
       validateEnum(nuovo_stato, VALID_STATES, 'nuovo_stato')
       validateStrings({ motivazione })
@@ -272,8 +277,8 @@ export function registerQuestioniWriteTools(): void {
             // La lista segue questo paragrafo
             const listNode = tree.children[i + 1]
             if (listNode && listNode.type === 'list') {
-              const newItemText = `${date} ${nuovo_stato} — ${motivazione}`
-              const newItem = parseMarkdown(`- ${newItemText}`).children[0]
+              const newItemText = formatStoriaEntry(date, nuovo_stato, motivazione, firma)
+              const newItem = parseMarkdown(newItemText).children[0]
               if (newItem && newItem.type === 'list') {
                 listNode.children.push(...newItem.children)
               }
@@ -301,14 +306,16 @@ export function registerQuestioniWriteTools(): void {
       'Aggiunge un commento (COMMENTO-NNN) in fondo al blocco questione, prima del separatore ---.',
     schema: z.object({
       id: z.string(),
-      testo: z.string()
+      testo: z.string(),
+      firma: z.string().optional()
     }),
     category: 'base',
     requiredEnrichments: [],
     handler: async (params: unknown): Promise<ToolResult> => {
-      const { id, testo } = z.object({
+      const { id, testo, firma } = z.object({
         id: z.string(),
-        testo: z.string()
+        testo: z.string(),
+        firma: z.string().optional()
       }).parse(params)
       validateStrings({ testo })
 
@@ -323,7 +330,7 @@ export function registerQuestioniWriteTools(): void {
         // Verifica se esiste già la sezione Commenti
         const commentiIdx = findSectionInBlock(tree.children, block.startIndex, block.endIndex, 'Commenti')
 
-        const commentBody = `${commentId} — ${date}\n${testo}`
+        const commentBody = `${formatCommentoHeader(commentId, date, firma)}\n${testo}`
         const commentNodes = parseMarkdown(commentBody).children
 
         if (commentiIdx !== null) {

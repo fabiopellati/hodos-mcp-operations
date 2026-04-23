@@ -556,7 +556,10 @@ export function registerQuestioniWriteTools(): void {
   registerTool({
     name: 'remove_questione',
     description:
-      'Rimuove una questione dall\'indice e dal corpo di questioni.md.',
+      'Rimuove una questione dall\'indice e dal corpo di questioni.md ' +
+      'senza creare entry nel mastro. Per la chiusura ordinaria usare ' +
+      'sempre close_questione. Usare remove_questione solo per ' +
+      'correzioni (es. questione aperta per errore).',
     schema: z.object({ id: z.string() }),
     category: 'base',
     requiredEnrichments: [],

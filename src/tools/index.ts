@@ -1,6 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { registerQuestioniReadTools } from './questioni/read.js'
 import { registerQuestioniWriteTools } from './questioni/write.js'
+import { registerCloseQuestioneTools } from './questioni/close.js'
 import { registerMastroReadTools } from './mastro/read.js'
 import { registerMastroWriteTools } from './mastro/write.js'
 import { registerNotesReadTools } from './notes/read.js'
@@ -16,6 +17,7 @@ export function registerAllTools(_server: McpServer): void {
   // U2 — tool base (questioni, mastro, note)
   registerQuestioniReadTools()
   registerQuestioniWriteTools()
+  registerCloseQuestioneTools()
   registerMastroReadTools()
   registerMastroWriteTools()
   registerNotesReadTools()

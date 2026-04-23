@@ -223,12 +223,15 @@ export function findLineByPattern(
 ): { lineStart: number; lineEnd: number; match: RegExpMatchArray } | null {
   const lines = content.split('\n')
   let offset = 0
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
     const m = line.match(pattern)
     if (m) {
+      // +1 per il \n, ma solo se non è l'ultima riga
+      const hasNewline = offset + line.length < content.length
       return {
         lineStart: offset,
-        lineEnd: offset + line.length + 1, // +1 per il \n
+        lineEnd: offset + line.length + (hasNewline ? 1 : 0),
         match: m
       }
     }
@@ -269,12 +272,14 @@ export function findLastLineByPatternInRange(
   const lines = slice.split('\n')
   let offset = 0
   let last: { lineStart: number; lineEnd: number; match: RegExpMatchArray } | null = null
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
     const m = line.match(pattern)
     if (m) {
+      const hasNewline = rangeStart + offset + line.length < content.length
       last = {
         lineStart: rangeStart + offset,
-        lineEnd: rangeStart + offset + line.length + 1,
+        lineEnd: rangeStart + offset + line.length + (hasNewline ? 1 : 0),
         match: m
       }
     }

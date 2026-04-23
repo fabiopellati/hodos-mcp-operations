@@ -143,9 +143,11 @@ export function registerCloseQuestioneTools(): void {
         }
       }
 
-      // --- Fase 2: scrittura mastro ---
+      // --- Fase 2: preparazione trasformazioni in memoria ---
 
       const date = today()
+
+      // 2a. Prepara entry mastro
       const mastroOffset = findAfterTitleOffset(mastroTree)
 
       let entry = `\n\n## ${date} — Chiusura ${parsed.id}: ${parsed.titolo}\n\n`
@@ -158,35 +160,11 @@ export function registerCloseQuestioneTools(): void {
       entry += `**Decisioni prese**\n\n${parsed.decisioni}\n\n`
       entry += `**Impatto**\n\n${parsed.impatto}\n\n---\n`
 
-      let mastroResult = insertAt(mastroContent, mastroOffset, entry)
+      const mastroResult = insertAt(mastroContent, mastroOffset, entry)
 
-      // Rimuovi eventuale thematicBreak duplicato
-      const insertedEnd = mastroOffset + entry.length
-      const afterInsert = mastroResult.slice(insertedEnd).replace(/^\n*/, '')
-      if (afterInsert.startsWith('---')) {
-        const breakStart = insertedEnd +
-          (mastroResult.length - insertedEnd - afterInsert.length)
-        const breakEnd = breakStart + 3
-        let removeEnd = breakEnd
-        while (
-          removeEnd < mastroResult.length &&
-          mastroResult[removeEnd] === '\n'
-        ) {
-          removeEnd++
-        }
-        mastroResult = mastroResult.slice(0, breakStart) +
-          mastroResult.slice(removeEnd)
-      }
-
-      await writeFile(mastroPath(), mastroResult, 'utf-8')
-
-      // --- Fase 3: rimozione da questioni.md ---
-
-      // Rileggi questioni.md (il file non è cambiato, ma usiamo
-      // il contenuto già in memoria per coerenza)
+      // 2b. Prepara rimozione da questioni.md
       let questioniResult = questioniContent
 
-      // Rimuovi riga dall'indice
       const indexInfo = findIndexTable(questioniTree)
       if (indexInfo) {
         const tableRow = findLineByPatternInRange(
@@ -205,26 +183,56 @@ export function registerCloseQuestioneTools(): void {
         }
       }
 
-      // Ri-parsa dopo rimozione riga indice
       const questioniTree2 = parseMarkdown(questioniResult)
 
-      // Rimuovi blocco corpo
       const block2 = findBlockByHeadingId(questioniTree2, parsed.id)
       if (block2) {
         const breakInfo = findThematicBreakAfterBlock(
           questioniResult,
           block2.endOffset
         )
-        const removeEnd = breakInfo ? breakInfo.end : block2.endOffset
+        if (!breakInfo) {
+          return {
+            content: [{
+              type: 'text',
+              text: `Separatore --- non trovato dopo il blocco ` +
+                `${parsed.id}. Struttura del file non conforme. ` +
+                'Operazione annullata, nessun file modificato.'
+            }],
+            isError: true
+          }
+        }
         questioniResult = replaceRange(
           questioniResult,
           block2.startOffset,
-          removeEnd,
+          breakInfo.end,
           ''
         )
       }
 
-      await writeFile(questioniPath(), questioniResult, 'utf-8')
+      // --- Fase 3: scrittura sequenziale ---
+      // Entrambe le trasformazioni sono pronte in memoria.
+      // Scriviamo il mastro per primo: se fallisce, nessun
+      // file è stato modificato. Se la seconda scrittura
+      // fallisce, l'errore documenta lo stato.
+
+      await writeFile(mastroPath(), mastroResult, 'utf-8')
+
+      try {
+        await writeFile(questioniPath(), questioniResult, 'utf-8')
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        return {
+          content: [{
+            type: 'text',
+            text: `ATTENZIONE: l'entry nel mastro è stata scritta ` +
+              `per ${parsed.id}, ma la rimozione da questioni.md ` +
+              `è fallita: ${msg}. Verificare e correggere ` +
+              'manualmente questioni.md.'
+          }],
+          isError: true
+        }
+      }
 
       return {
         content: [{

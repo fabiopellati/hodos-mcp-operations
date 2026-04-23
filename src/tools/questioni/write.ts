@@ -60,11 +60,8 @@ function updateCounterInString(
  */
 function findThematicBreakAfterBlock(
   content: string,
-  tree: Root,
   blockEndOffset: number
 ): { start: number; end: number } | null {
-  // Il thematicBreak dovrebbe iniziare a blockEndOffset
-  // (findBlockByHeadingId termina all'inizio del thematicBreak)
   const slice = content.slice(blockEndOffset, blockEndOffset + 20)
   const m = slice.match(/^-{3,}\n?/)
   if (m) {
@@ -560,6 +557,20 @@ export function registerQuestioniWriteTools(): void {
         questione_ids: z.array(z.string())
       }).parse(params)
 
+      const qidPattern = /^QUESTIONE-\d+$/
+      for (const qid of questione_ids) {
+        if (!qidPattern.test(qid)) {
+          return {
+            content: [{
+              type: 'text',
+              text: `ID questione non valido: "${qid}". ` +
+                'Atteso formato QUESTIONE-NNN.'
+            }],
+            isError: true
+          }
+        }
+      }
+
       await atomicFileOperation(questioniPath(), (content, tree) => {
         const block = findBlockByHeadingId(tree, id)
         if (!block) throw new Error(`Questione ${id} non trovata.`)
@@ -648,10 +659,14 @@ export function registerQuestioniWriteTools(): void {
         // 2. Rimuovi blocco corpo (heading h2 fino al thematicBreak incluso)
         const block = findBlockByHeadingId(tree2, id)
         if (block) {
-          // Il thematicBreak si trova a block.endOffset
-          const breakInfo = findThematicBreakAfterBlock(result, tree2, block.endOffset)
-          const removeEnd = breakInfo ? breakInfo.end : block.endOffset
-          result = replaceRange(result, block.startOffset, removeEnd, '')
+          const breakInfo = findThematicBreakAfterBlock(result, block.endOffset)
+          if (!breakInfo) {
+            throw new Error(
+              `Separatore --- non trovato dopo il blocco ${id}. ` +
+              'Struttura del file non conforme.'
+            )
+          }
+          result = replaceRange(result, block.startOffset, breakInfo.end, '')
         }
 
         return result

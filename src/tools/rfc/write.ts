@@ -163,7 +163,7 @@ async function handleCreateRfc(params: unknown): Promise<ToolResult> {
   try {
     await mkdir(rfcDir, { recursive: true })
     const content = buildRfcContent(parsed)
-    await writeFile(filePath, content, 'utf-8')
+    await writeFile(filePath, content, { encoding: 'utf-8', flag: 'wx' })
     return {
       content: [{
         type: 'text',
@@ -171,8 +171,19 @@ async function handleCreateRfc(params: unknown): Promise<ToolResult> {
       }]
     }
   } catch (err) {
+    const e = err as NodeJS.ErrnoException
+    if (e.code === 'EEXIST') {
+      return {
+        content: [{
+          type: 'text',
+          text: `File RFC già esistente: ${fileName}. ` +
+            'Creazione annullata.'
+        }],
+        isError: true
+      }
+    }
     return {
-      content: [{ type: 'text', text: (err as Error).message }],
+      content: [{ type: 'text', text: e.message }],
       isError: true
     }
   }
@@ -301,9 +312,9 @@ async function handleWriteResponseRfc(params: unknown): Promise<ToolResult> {
       }
     }
 
-    const responseMarker = '## Response RFC'
-    const markerIndex = content.indexOf(responseMarker)
-    if (markerIndex === -1) {
+    const tree = parseMarkdown(content)
+    const responseSection = findSectionByHeading(tree, 'Response RFC', 2)
+    if (!responseSection) {
       return {
         content: [{
           type: 'text',
@@ -312,6 +323,7 @@ async function handleWriteResponseRfc(params: unknown): Promise<ToolResult> {
         isError: true
       }
     }
+    const markerIndex = responseSection.startOffset
 
     const newResponseContent = `## Response RFC
 

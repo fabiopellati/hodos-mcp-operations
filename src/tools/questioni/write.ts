@@ -76,6 +76,65 @@ function findThematicBreakAfterBlock(
   return null
 }
 
+/**
+ * Conta le occorrenze di un pattern nella stringa.
+ */
+function countOccurrences(content: string, pattern: RegExp): number {
+  const globalPattern = new RegExp(pattern.source, 'g')
+  const matches = content.match(globalPattern)
+  return matches ? matches.length : 0
+}
+
+/**
+ * Risolve il range di ricerca per una sezione, gestendo
+ * l'ambiguità quando la sezione compare più volte nel file.
+ *
+ * - Se id è fornito: restringe al blocco della questione
+ * - Se la sezione è univoca: restituisce il range dal label
+ *   alla fine del file (o del blocco se presente)
+ * - Se la sezione è ambigua e id è assente: lancia errore
+ */
+function resolveSectionRange(
+  content: string,
+  tree: Root,
+  sezione: string,
+  id?: string
+): { searchStart: number; searchEnd: number } {
+  const sectionPattern = new RegExp(`\\*\\*${sezione}\\*\\*`)
+
+  if (id) {
+    const block = findBlockByHeadingId(tree, id)
+    if (!block) throw new Error(`Blocco ${id} non trovato.`)
+
+    const label = findLineByPatternInRange(
+      content, sectionPattern, block.startOffset, block.endOffset
+    )
+    if (!label) {
+      throw new Error(
+        `Sezione "${sezione}" non trovata in ${id}.`
+      )
+    }
+    return { searchStart: label.lineEnd, searchEnd: block.endOffset }
+  }
+
+  // Nessun id: verifica unicità
+  const occurrences = countOccurrences(content, sectionPattern)
+  if (occurrences === 0) {
+    throw new Error(`Sezione "${sezione}" non trovata.`)
+  }
+  if (occurrences > 1) {
+    throw new Error(
+      `Sezione "${sezione}" trovata ${occurrences} volte nel file. ` +
+      'Specificare il parametro "id" per identificare il blocco ' +
+      'contenitore (es. QUESTIONE-003).'
+    )
+  }
+
+  const label = findLineByPattern(content, sectionPattern)
+  if (!label) throw new Error(`Sezione "${sezione}" non trovata.`)
+  return { searchStart: label.lineEnd, searchEnd: content.length }
+}
+
 export function registerQuestioniWriteTools(): void {
   registerTool({
     name: 'create_questione',
@@ -607,21 +666,26 @@ export function registerQuestioniWriteTools(): void {
   registerTool({
     name: 'check_item',
     description:
-      'Spunta un checkbox [ ] -> [x] alla posizione indicata in una sezione di un file markdown. Indice 1-based.',
+      'Spunta un checkbox [ ] -> [x] alla posizione indicata in una sezione ' +
+      'di un file markdown. Indice 1-based. Se la sezione compare più volte ' +
+      'nel file, il parametro id è obbligatorio per identificare il blocco ' +
+      'contenitore.',
     schema: z.object({
       path: z.string(),
       sezione: z.string(),
       indice: z.number().int().min(1),
-      nota: z.string().optional()
+      nota: z.string().optional(),
+      id: z.string().optional()
     }),
     category: 'base',
     requiredEnrichments: [],
     handler: async (params: unknown): Promise<ToolResult> => {
-      const { path: filePath, sezione, indice, nota } = z.object({
+      const { path: filePath, sezione, indice, nota, id } = z.object({
         path: z.string(),
         sezione: z.string(),
         indice: z.number().int().min(1),
-        nota: z.string().optional()
+        nota: z.string().optional(),
+        id: z.string().optional()
       }).parse(params)
 
       const fullPath = path.isAbsolute(filePath)
@@ -630,24 +694,22 @@ export function registerQuestioniWriteTools(): void {
 
       await atomicFileOperation(fullPath, (content, tree) => {
         let result = content
+        const { searchStart, searchEnd } = resolveSectionRange(
+          content, tree, sezione, id
+        )
 
-        // Trova la sezione per label **sezione**
-        const label = findLineByPattern(result, new RegExp(`\\*\\*${sezione}\\*\\*`))
-        if (!label) throw new Error(`Sezione "${sezione}" non trovata.`)
-
-        // Trova tutte le righe checkbox dopo il label
+        // Trova tutte le righe checkbox nel range
         let count = 0
-        const lines = result.slice(label.lineEnd).split('\n')
-        let offset = label.lineEnd
+        const slice = result.slice(searchStart, searchEnd)
+        const lines = slice.split('\n')
+        let offset = searchStart
         for (const line of lines) {
           const m = line.match(/^- \[[ x]\] /)
           if (m) {
             count++
             if (count === indice) {
-              // Trovata la riga target
               const checkboxMatch = line.match(/^- \[ \] /)
               if (!checkboxMatch) {
-                // Gia' spuntata, niente da fare
                 return result
               }
               const lineStart = offset
@@ -660,7 +722,6 @@ export function registerQuestioniWriteTools(): void {
               return result
             }
           } else if (line.trim() !== '' && !line.match(/^- /)) {
-            // Usciti dalla lista
             break
           }
           offset += line.length + 1
@@ -678,21 +739,25 @@ export function registerQuestioniWriteTools(): void {
   registerTool({
     name: 'annotate_item',
     description:
-      'Aggiunge un\'annotazione inline a un elemento di una lista senza spuntarlo.',
+      'Aggiunge un\'annotazione inline a un elemento di una lista senza ' +
+      'spuntarlo. Se la sezione compare più volte nel file, il parametro ' +
+      'id è obbligatorio per identificare il blocco contenitore.',
     schema: z.object({
       path: z.string(),
       sezione: z.string(),
       indice: z.number().int().min(1),
-      nota: z.string()
+      nota: z.string(),
+      id: z.string().optional()
     }),
     category: 'base',
     requiredEnrichments: [],
     handler: async (params: unknown): Promise<ToolResult> => {
-      const { path: filePath, sezione, indice, nota } = z.object({
+      const { path: filePath, sezione, indice, nota, id } = z.object({
         path: z.string(),
         sezione: z.string(),
         indice: z.number().int().min(1),
-        nota: z.string()
+        nota: z.string(),
+        id: z.string().optional()
       }).parse(params)
       validateStrings({ nota })
 
@@ -702,15 +767,15 @@ export function registerQuestioniWriteTools(): void {
 
       await atomicFileOperation(fullPath, (content, tree) => {
         let result = content
+        const { searchStart, searchEnd } = resolveSectionRange(
+          content, tree, sezione, id
+        )
 
-        // Trova la sezione per label **sezione**
-        const label = findLineByPattern(result, new RegExp(`\\*\\*${sezione}\\*\\*`))
-        if (!label) throw new Error(`Sezione "${sezione}" non trovata.`)
-
-        // Trova la riga alla posizione indice
+        // Trova la riga alla posizione indice nel range
         let count = 0
-        const lines = result.slice(label.lineEnd).split('\n')
-        let offset = label.lineEnd
+        const slice = result.slice(searchStart, searchEnd)
+        const lines = slice.split('\n')
+        let offset = searchStart
         for (const line of lines) {
           const m = line.match(/^- /)
           if (m) {
@@ -723,7 +788,6 @@ export function registerQuestioniWriteTools(): void {
               return result
             }
           } else if (line.trim() !== '' && !line.startsWith('  ')) {
-            // Usciti dalla lista
             break
           }
           offset += line.length + 1

@@ -25,29 +25,108 @@ Prerequisiti:
 - L'opera deve avere i file di processo inizializzati
   (questioni.md, mastro.md, notes.md)
 
+## Immagine Docker
+
+L'immagine del server è pubblicata su GitHub
+Container Registry:
+
+```
+ghcr.io/fabiopellati/hodos-mcp-operations
+```
+
+Il tag `latest` punta sempre all'ultimo rilascio.
+Per fissare una versione specifica usare il tag
+numerico (es. `0.4.0`).
+
 ## Configurazione dello stack
 
-Il server si avvia con Docker Compose. Il file
-`docker-compose.yml` prevede un servizio principale
-`hodos-mcp` e servizi opzionali attivabili tramite
-profili.
+Il server si avvia con Docker Compose. Nella
+directory dell'opera creare un file
+`docker-compose.yml` con il seguente contenuto:
 
-Avvio base (solo server MCP):
+```yaml
+services:
+  hodos-mcp:
+    image: ghcr.io/fabiopellati/hodos-mcp-operations:latest
+    ports:
+      - "${MCP_PORT:-3100}:3100"
+    volumes:
+      - "${OPERA_PATH:-.}:/opera"
+    environment:
+      - PORT=3100
+      - OPERA_ROOT=/opera
+```
+
+La variabile `OPERA_PATH` indica il path assoluto
+della directory dell'opera sull'host. Se il file
+`docker-compose.yml` si trova nella stessa directory
+dell'opera, il default (`.`) è sufficiente.
+
+Avvio del server:
 
 ```bash
 docker compose up -d
 ```
 
-Il server espone la porta 3100 e richiede il
-mount del volume dell'opera su `/opera`.
+Verifica che il server sia in esecuzione:
 
-Variabili d'ambiente principali:
+```bash
+curl -s http://localhost:3100/health
+```
+
+### Variabili d'ambiente
+
 - `OPERA_ROOT` — path interno del volume opera
   (default: `/opera`)
 - `OPERA_PATH` — path dell'opera sull'host
   (usato nel compose per il bind mount)
 - `MCP_PORT` — porta esposta sull'host
   (default: `3100`)
+
+## Configurazione del client MCP
+
+Per collegare Claude Code al server, creare o
+aggiornare il file `.mcp.json` nella directory
+dell'opera con la seguente configurazione:
+
+```json
+{
+  "mcpServers": {
+    "hodos-mcp-operations": {
+      "type": "http",
+      "url": "http://localhost:3100/mcp"
+    }
+  }
+}
+```
+
+Il nome `hodos-mcp-operations` è convenzionale; il
+campo rilevante è l'URL che punta all'endpoint MCP
+del server sulla porta configurata.
+
+Dopo aver configurato il client, riavviare la
+sessione Claude Code perché la connessione MCP
+venga stabilita.
+
+## Primo utilizzo
+
+Alla prima interazione nella sessione, l'agente AI
+deve chiamare il tool `configure` per dichiarare
+gli arricchimenti attivi nell'opera. Il tool
+restituisce il fingerprint dell'opera e abilita i
+tool condizionati.
+
+Esempio di chiamata:
+
+```json
+{ "arricchimenti": ["fasi-p0-p4", "rag"] }
+```
+
+La lista degli arricchimenti deve corrispondere a
+quelli dichiarati nel `CLAUDE.md` dell'opera nella
+sezione `Arricchimenti abilitati`. Se l'opera non
+usa arricchimenti condizionati, passare una lista
+vuota.
 
 ## Opzione RAG
 
@@ -60,8 +139,49 @@ per significato, non solo per ID o posizione.
 ### Attivazione
 
 L'infrastruttura RAG si attiva con il profilo Docker
-Compose `rag`, che aggiunge i servizi Qdrant (vector
-database) e Redis (cache):
+Compose `rag`. Il compose deve includere i servizi
+Qdrant e Redis oltre al server principale:
+
+```yaml
+services:
+  hodos-mcp:
+    image: ghcr.io/fabiopellati/hodos-mcp-operations:latest
+    ports:
+      - "${MCP_PORT:-3100}:3100"
+    volumes:
+      - "${OPERA_PATH:-.}:/opera"
+    environment:
+      - PORT=3100
+      - OPERA_ROOT=/opera
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+
+  qdrant:
+    image: qdrant/qdrant:v1.14.0
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    profiles:
+      - rag
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    profiles:
+      - rag
+
+volumes:
+  qdrant_data:
+  redis_data:
+```
+
+Avvio con profilo RAG:
 
 ```bash
 docker compose --profile rag up -d

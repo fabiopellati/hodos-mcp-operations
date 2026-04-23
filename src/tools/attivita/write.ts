@@ -1,4 +1,4 @@
-import path from 'node:path'
+import { join } from 'node:path'
 import { writeFile } from 'node:fs/promises'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
@@ -6,15 +6,14 @@ import { readRaw, insertAt } from '../../operations/atomic.js'
 import { parseMarkdown } from '../../parser/markdown.js'
 import { getHeadingText } from '../../parser/sections.js'
 import { validateStrings, validateEnum } from '../../operations/validate.js'
+import { documentiDir } from '../../config/paths.js'
 import { findVoceByBlId } from './read.js'
-
-const basePath = process.env.OPERA_BASE_PATH || '/opera'
 
 const VALID_CONFORMITA = ['conforme', 'parziale', 'non conforme'] as const
 const DATA_REGEX = /^\d{4}-\d{2}-\d{2}$/
 
 function attivitaPath(unita: string): string {
-  return path.join(basePath, 'documenti', 'unita', unita, 'attivita.md')
+  return join(documentiDir, 'unita', unita, 'attivita.md')
 }
 
 /** Conta le voci BL-N esistenti per determinare il prossimo numero */

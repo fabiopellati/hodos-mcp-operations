@@ -4,9 +4,7 @@ import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
 import { readRaw } from '../../operations/atomic.js'
 import { validateStrings } from '../../operations/validate.js'
-
-const basePath = process.env.OPERA_BASE_PATH || '/opera'
-const rfcDir = join(basePath, 'rfc')
+import { rfcDir } from '../../config/paths.js'
 
 export const readRfcSchema = z.object({
   questione_id: z.string()
@@ -22,15 +20,24 @@ export async function findRfcFile(questioneId: string): Promise<string> {
     files = await readdir(rfcDir)
   } catch {
     throw new Error(
-      `Directory rfc/ non trovata in ${basePath}`
+      `Directory rfc/ non trovata in ${rfcDir}`
     )
   }
 
   // Normalizza l'ID per la ricerca (case-insensitive)
   const idLower = questioneId.toLowerCase()
+  // Estrai il numero per supportare il formato abbreviato (rfc-Q002-*.md)
+  const numMatch = questioneId.match(/(\d+)/)
+  const qAbbr = numMatch ? `q${numMatch[1]}` : null
+
   const matching = files.filter(f => {
     const fLower = f.toLowerCase()
-    return fLower.endsWith('.md') && fLower.includes(idLower)
+    if (!fLower.endsWith('.md')) return false
+    // Match formato completo (rfc-questione-002.md)
+    if (fLower.includes(idLower)) return true
+    // Match formato abbreviato (rfc-q002-*.md)
+    if (qAbbr && fLower.startsWith(`rfc-${qAbbr}`)) return true
+    return false
   })
 
   if (matching.length === 0) {

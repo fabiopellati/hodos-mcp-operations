@@ -8,6 +8,7 @@ import {
 } from './server.js'
 import { VALID_ENRICHMENTS } from './operations/validate.js'
 import { questioniPath, mastroPath } from './config/paths.js'
+import * as rag from './rag/index.js'
 
 /**
  * Legge il fingerprint dell'OPERA: titolo del mastro e
@@ -83,19 +84,30 @@ export function registerConfigureTool(): void {
         }
       }
 
+      // Init RAG se richiesto
+      if (parsed.arricchimenti.includes('rag')) {
+        await rag.initialize()
+      }
+
       updateVisibility(parsed.arricchimenti)
 
       const visibili = getVisibleTools().map(t => t.name)
       const fingerprint = await readOperaFingerprint()
 
+      const response: Record<string, unknown> = {
+        arricchimenti_attivi: parsed.arricchimenti,
+        tool_visibili: visibili,
+        opera_fingerprint: fingerprint
+      }
+
+      if (parsed.arricchimenti.includes('rag')) {
+        response.rag_status = rag.getStatus()
+      }
+
       return {
         content: [{
           type: 'text',
-          text: JSON.stringify({
-            arricchimenti_attivi: parsed.arricchimenti,
-            tool_visibili: visibili,
-            opera_fingerprint: fingerprint
-          }, null, 2)
+          text: JSON.stringify(response, null, 2)
         }]
       }
     }

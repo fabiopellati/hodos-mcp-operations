@@ -1,13 +1,10 @@
-import path from 'node:path'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
 import { readRaw } from '../../operations/atomic.js'
 import { parseMarkdown } from '../../parser/markdown.js'
 import { findIndexTable, getHeadingText } from '../../parser/sections.js'
+import { notesPath } from '../../config/paths.js'
 import type { Root } from 'mdast'
-
-const basePath = process.env.OPERA_BASE_PATH || '/opera'
-const notesPath = () => path.join(basePath, 'notes.md')
 
 /**
  * Trova il blocco di una nota per ID (offset nella stringa originale).
@@ -27,7 +24,8 @@ export function findNotaBlock(
     let endIndex = children.length
     for (let j = i + 1; j < children.length; j++) {
       const sibling = children[j]
-      if (sibling.type === 'heading' && sibling.depth <= 2) {
+      if ((sibling.type === 'heading' && sibling.depth <= 2) ||
+          sibling.type === 'thematicBreak') {
         endIndex = j
         break
       }

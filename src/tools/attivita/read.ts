@@ -1,16 +1,15 @@
-import path from 'node:path'
+import { join } from 'node:path'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
 import { readRaw } from '../../operations/atomic.js'
 import { parseMarkdown } from '../../parser/markdown.js'
 import { getHeadingText } from '../../parser/sections.js'
 import { validateStrings } from '../../operations/validate.js'
+import { documentiDir } from '../../config/paths.js'
 import type { Root, Heading } from 'mdast'
 
-const basePath = process.env.OPERA_BASE_PATH || '/opera'
-
 function attivitaPath(unita: string): string {
-  return path.join(basePath, 'documenti', 'unita', unita, 'attivita.md')
+  return join(documentiDir, 'unita', unita, 'attivita.md')
 }
 
 /** Offset di inizio di un nodo */

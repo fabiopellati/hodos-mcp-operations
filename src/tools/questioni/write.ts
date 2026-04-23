@@ -18,12 +18,10 @@ import {
 } from '../../parser/sections.js'
 import { validateStrings, validateEnum, VALID_STATES } from '../../operations/validate.js'
 import { formatStoriaEntry, formatCommentoHeader } from '../../enrichments/firma.js'
+import { questioniPath, operaRoot } from '../../config/paths.js'
 import type { Root } from 'mdast'
 
 const VALID_TYPES = ['rilievo', 'revisione', 'anomalia'] as const
-
-const basePath = process.env.OPERA_BASE_PATH || '/opera'
-const questioniPath = () => path.join(basePath, 'questioni.md')
 
 const today = () => new Date().toISOString().slice(0, 10)
 
@@ -147,20 +145,20 @@ export function registerQuestioniWriteTools(): void {
         body += `${formatStoriaEntry(date, 'open', parsed.titolo, parsed.firma)}\n\n`
         body += `**Descrizione**\n\n`
         body += `${parsed.descrizione}\n\n`
-        body += `**Domande aperte**\n\n`
         if (parsed.domande_aperte && parsed.domande_aperte.length > 0) {
+          body += `**Domande aperte**\n\n`
           for (const d of parsed.domande_aperte) {
             body += `- [ ] ${d}\n`
           }
+          body += `\n`
         }
-        body += `\n`
-        body += `**Impatto**\n\n`
         if (parsed.impatto && parsed.impatto.length > 0) {
+          body += `**Impatto**\n\n`
           for (const imp of parsed.impatto) {
             body += `- ${imp.artefatto} — ${imp.descrizione}\n`
           }
+          body += `\n`
         }
-        body += `\n`
         if (parsed.collegate && parsed.collegate.length > 0) {
           body += `**Questioni collegate**: ${parsed.collegate.join(', ')}\n\n`
         }
@@ -258,7 +256,7 @@ export function registerQuestioniWriteTools(): void {
         const block2 = findBlockByHeadingId(tree3, id)
         if (!block2) throw new Error(`Questione ${id} non trovata dopo aggiornamento stato.`)
 
-        // 4. Aggiungi riga in Storia: trova l'ultima riga della lista Storia
+        // 4. Aggiungi riga in Storia in prepend (la più recente in cima)
         const storiaLabel = findLineByPatternInRange(
           result,
           /\*\*Storia\*\*/,
@@ -266,17 +264,16 @@ export function registerQuestioniWriteTools(): void {
           block2.endOffset
         )
         if (storiaLabel) {
-          // Trova l'ultima riga della lista (formato: "- YYYY-MM-DD stato ...")
-          const lastEntry = findLastLineByPatternInRange(
+          const firstEntry = findLineByPatternInRange(
             result,
             /^- \d{4}-\d{2}-\d{2}\s/,
             storiaLabel.lineEnd,
             block2.endOffset
           )
           const newEntry = formatStoriaEntry(date, nuovo_stato, motivazione, firma)
-          if (lastEntry) {
-            // Inserisci dopo l'ultima riga della lista
-            result = insertAt(result, lastEntry.lineEnd, `${newEntry}\n`)
+          if (firstEntry) {
+            // Prepend: inserisci prima della prima riga della lista
+            result = insertAt(result, firstEntry.lineStart, `${newEntry}\n`)
           } else {
             // Nessuna entry esistente, inserisci dopo il label Storia
             result = insertAt(result, storiaLabel.lineEnd, `\n${newEntry}\n`)
@@ -345,7 +342,7 @@ export function registerQuestioniWriteTools(): void {
           block.endOffset
         )
 
-        const commentBody = `\n${formatCommentoHeader(commentId, date, firma)}\n${testo}\n`
+        const commentBody = `\n${formatCommentoHeader(commentId, date, firma)}\n${testo}\n\n`
 
         if (commentiLabel) {
           // Inserisci prima del thematicBreak (alla fine del blocco)
@@ -533,9 +530,18 @@ export function registerQuestioniWriteTools(): void {
             newLine
           )
         } else {
-          // Inserisci prima del thematicBreak (fine del blocco)
-          const newLine = `\n**Questioni collegate**: ${questione_ids.join(', ')}\n`
-          result = insertAt(result, block.endOffset, newLine)
+          // Inserisci tra Impatto e Commenti (o prima del thematicBreak)
+          const commentiLabel = findLineByPatternInRange(
+            result,
+            /\*\*Commenti\*\*/,
+            block.startOffset,
+            block.endOffset
+          )
+          const insertOffset = commentiLabel
+            ? commentiLabel.lineStart
+            : block.endOffset
+          const newLine = `**Questioni collegate**: ${questione_ids.join(', ')}\n\n`
+          result = insertAt(result, insertOffset, newLine)
         }
 
         return result
@@ -617,7 +623,7 @@ export function registerQuestioniWriteTools(): void {
 
       const fullPath = path.isAbsolute(filePath)
         ? filePath
-        : path.join(basePath, filePath)
+        : path.join(operaRoot, filePath)
 
       await atomicFileOperation(fullPath, (content, tree) => {
         let result = content
@@ -689,7 +695,7 @@ export function registerQuestioniWriteTools(): void {
 
       const fullPath = path.isAbsolute(filePath)
         ? filePath
-        : path.join(basePath, filePath)
+        : path.join(operaRoot, filePath)
 
       await atomicFileOperation(fullPath, (content, tree) => {
         let result = content

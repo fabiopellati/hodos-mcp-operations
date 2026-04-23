@@ -6,10 +6,8 @@ import { validateStrings, validateEnum } from '../../operations/validate.js'
 import { readRaw, replaceRange } from '../../operations/atomic.js'
 import { parseMarkdown } from '../../parser/markdown.js'
 import { findSectionByHeading } from '../../parser/sections.js'
+import { rfcDir } from '../../config/paths.js'
 import { findRfcFile } from './read.js'
-
-const basePath = process.env.OPERA_BASE_PATH || '/opera'
-const rfcDir = join(basePath, 'rfc')
 
 const VALID_RFC_STATES = ['accepted', 'rejected', 'deferred'] as const
 
@@ -24,14 +22,33 @@ function validateDate(value: string, paramName: string): void {
   }
 }
 
-function toSlug(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 50)
+const SLUG_REGEX = /^[a-z0-9]+(-[a-z0-9]+)*$/
+const SLUG_MAX_LENGTH = 50
+
+function validateSlug(slug: string): void {
+  const normalized = slug.toLowerCase().replace(/-+/g, '-').replace(/^-|-$/g, '')
+  if (!SLUG_REGEX.test(normalized) || normalized !== slug) {
+    throw new Error(
+      `Slug non valido: "${slug}". ` +
+      `Deve essere in kebab-case: solo lettere minuscole, numeri e trattini, ` +
+      `senza trattini iniziali, finali o consecutivi. ` +
+      `Esempio: "affinamento-mcp-operativo".`
+    )
+  }
+  if (slug.length > SLUG_MAX_LENGTH) {
+    throw new Error(
+      `Slug troppo lungo: ${slug.length} caratteri (massimo ${SLUG_MAX_LENGTH}). ` +
+      `Riformulare in modo più conciso.`
+    )
+  }
+}
+
+function extractQId(questioneId: string): string {
+  const match = questioneId.match(/QUESTIONE-(\d+)/i)
+  if (!match) {
+    throw new Error(`ID questione non valido: "${questioneId}". Atteso formato QUESTIONE-NNN.`)
+  }
+  return `Q${match[1]}`
 }
 
 /**
@@ -54,6 +71,11 @@ function isResponseCompiled(content: string): boolean {
 
 const createRfcSchema = z.object({
   questione_id: z.string(),
+  slug: z.string().describe(
+    'Identificativo breve e descrittivo per il nome file RFC, in kebab-case. ' +
+    'Solo lettere minuscole, numeri e trattini. Massimo 50 caratteri. ' +
+    'Esempio: "affinamento-mcp-operativo".'
+  ),
   data: z.string(),
   da: z.string(),
   a: z.string(),
@@ -108,6 +130,7 @@ async function handleCreateRfc(params: unknown): Promise<ToolResult> {
   const parsed = createRfcSchema.parse(params)
   validateStrings({
     questione_id: parsed.questione_id,
+    slug: parsed.slug,
     data: parsed.data,
     da: parsed.da,
     a: parsed.a,
@@ -117,6 +140,7 @@ async function handleCreateRfc(params: unknown): Promise<ToolResult> {
     criteri: parsed.criteri
   })
   validateDate(parsed.data, 'data')
+  validateSlug(parsed.slug)
 
   // Verifica che non esista già un file RFC per lo stesso ID
   try {
@@ -132,8 +156,8 @@ async function handleCreateRfc(params: unknown): Promise<ToolResult> {
     // Nessun file trovato: possiamo procedere
   }
 
-  const slug = toSlug(parsed.questione_id)
-  const fileName = `rfc-${slug}.md`
+  const qId = extractQId(parsed.questione_id)
+  const fileName = `rfc-${qId}-${parsed.slug}.md`
   const filePath = join(rfcDir, fileName)
 
   try {

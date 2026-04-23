@@ -1,11 +1,10 @@
-import path from 'node:path'
+import { join } from 'node:path'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
 import { validateStrings } from '../../operations/validate.js'
-
-const basePath = process.env.OPERA_BASE_PATH || '/opera'
+import { documentiDir } from '../../config/paths.js'
 
 const NOME_REGEX = /^[a-z0-9]+(-[a-z0-9]+)*$/
 
@@ -59,7 +58,7 @@ export function registerUnitaWriteTools(): void {
       validateStrings({ nome })
       validateNomeUnita(nome)
 
-      const unitDir = path.join(basePath, 'documenti', 'unita', nome)
+      const unitDir = join(documentiDir, 'unita', nome)
 
       if (existsSync(unitDir)) {
         return {
@@ -77,7 +76,7 @@ export function registerUnitaWriteTools(): void {
       const creati: string[] = []
 
       for (const file of files) {
-        await writeFile(path.join(unitDir, file.name), file.content, 'utf-8')
+        await writeFile(join(unitDir, file.name), file.content, 'utf-8')
         creati.push(file.name)
       }
 

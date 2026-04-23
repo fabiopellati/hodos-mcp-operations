@@ -12,7 +12,7 @@ LABEL org.opencontainers.image.title="hodos-mcp-operations"
 LABEL org.opencontainers.image.description="Server MCP operativo per file di processo Hodos. Configurare user nel compose: user \${UID:-1000}:\${GID:-1000}"
 LABEL org.opencontainers.image.source="https://github.com/fabiopellati/hodos-mcp-operations"
 
-RUN apk add --no-cache wget
+RUN apk add --no-cache wget git
 WORKDIR /app
 COPY --from=build /app/dist ./dist/
 COPY --from=build /app/node_modules ./node_modules/

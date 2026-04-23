@@ -8,6 +8,7 @@ import { registerNotesReadTools } from './notes/read.js'
 import { registerNotesWriteTools } from './notes/write.js'
 import { registerRfcTools } from './rfc/index.js'
 import { registerFasiTools } from './fasi/index.js'
+import { registerRagTools } from './rag/search.js'
 
 /**
  * Registra tutti i tool (base U2/U3 e condizionati U4)
@@ -28,4 +29,7 @@ export function registerAllTools(_server: McpServer): void {
 
   // U4 — tool fasi P0-P4 (condizionati)
   registerFasiTools()
+
+  // RAG — tool ricerca semantica (condizionato)
+  registerRagTools()
 }

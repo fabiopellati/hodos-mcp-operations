@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
 import { atomicFileOperation, insertAt, replaceRange } from '../../operations/atomic.js'
+import { parseMarkdown } from '../../parser/markdown.js'
 import {
   findIndexTable,
   findFirstDataRowOffset,
@@ -76,11 +77,12 @@ export function registerNotesWriteTools(): void {
           const { offset: rowOffset, needsNewline } = findFirstDataRowOffset(indexResult.table)
           const newRow = `${needsNewline ? '\n' : ''}| ${id} | ${descrizione} | ${date} |\n`
           result = insertAt(result, rowOffset, newRow)
-          // Dopo l'inserimento, tutti gli offset successivi shiftano di newRow.length
-          const shift = newRow.length
+
+          // Ri-parsa dopo l'inserimento per offset corretti
+          const tree2 = parseMarkdown(result)
 
           // 2. Inserisci blocco corpo dopo l'indice e il separatore
-          const bodyOffset = findBodyInsertOffset(tree) + shift
+          const bodyOffset = findBodyInsertOffset(tree2)
           const autore = formatNotaAutore(firma)
           const autoreBlock = autore ? `${autore}\n\n` : ''
           const bodyBlock = `\n## ${id} — ${date} — ${descrizione}\n\n${autoreBlock}${corpo}\n\n---\n`

@@ -1,28 +1,11 @@
-import path from 'node:path'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
 import { readRaw } from '../../operations/atomic.js'
 import { parseMarkdown } from '../../parser/markdown.js'
 import { findSectionByHeading, getHeadingText } from '../../parser/sections.js'
 import { validateStrings } from '../../operations/validate.js'
+import { resolveDocPath } from '../../config/paths.js'
 import type { Heading } from 'mdast'
-
-const basePath = process.env.OPERA_BASE_PATH || '/opera'
-
-function resolveDocPath(relativePath: string): string {
-  const normalized = path.normalize(relativePath)
-  if (!normalized.startsWith('documenti/') && !normalized.startsWith('documenti\\')) {
-    throw new Error(
-      `Il path deve essere sotto "documenti/". Ricevuto: ${relativePath}`
-    )
-  }
-  // Protezione da path traversal
-  const full = path.resolve(basePath, normalized)
-  if (!full.startsWith(path.join(basePath, 'documenti'))) {
-    throw new Error(`Path non valido: ${relativePath}`)
-  }
-  return full
-}
 
 export function registerFasiReadTools(): void {
   registerTool({

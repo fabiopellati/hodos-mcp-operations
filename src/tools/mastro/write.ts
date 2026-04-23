@@ -1,13 +1,10 @@
-import path from 'node:path'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
 import { atomicFileOperation, insertAt } from '../../operations/atomic.js'
 import { findAfterTitleOffset } from '../../parser/sections.js'
 import { validateStrings } from '../../operations/validate.js'
 import { isCompressioneActive, isPercorsoRequired } from '../../enrichments/compressione.js'
-
-const basePath = process.env.OPERA_BASE_PATH || '/opera'
-const mastroPath = () => path.join(basePath, 'mastro.md')
+import { mastroPath } from '../../config/paths.js'
 
 const today = () => new Date().toISOString().slice(0, 10)
 

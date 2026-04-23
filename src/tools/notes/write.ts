@@ -1,4 +1,3 @@
-import path from 'node:path'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
 import { atomicFileOperation, insertAt, replaceRange } from '../../operations/atomic.js'
@@ -12,10 +11,8 @@ import {
 } from '../../parser/sections.js'
 import { validateStrings } from '../../operations/validate.js'
 import { formatCommentoHeader, formatNotaAutore } from '../../enrichments/firma.js'
+import { notesPath } from '../../config/paths.js'
 import { findNotaBlock } from './read.js'
-
-const basePath = process.env.OPERA_BASE_PATH || '/opera'
-const notesPath = () => path.join(basePath, 'notes.md')
 
 const today = () => new Date().toISOString().slice(0, 10)
 
@@ -86,7 +83,7 @@ export function registerNotesWriteTools(): void {
           const bodyOffset = findBodyInsertOffset(tree) + shift
           const autore = formatNotaAutore(firma)
           const autoreBlock = autore ? `${autore}\n\n` : ''
-          const bodyBlock = `\n## ${id} — ${date} — ${descrizione}\n\n${autoreBlock}${corpo}\n`
+          const bodyBlock = `\n## ${id} — ${date} — ${descrizione}\n\n${autoreBlock}${corpo}\n\n---\n`
           result = insertAt(result, bodyOffset, bodyBlock)
         }
 
@@ -131,7 +128,7 @@ export function registerNotesWriteTools(): void {
         )
         const commentId = `COMMENTO-${padId(lastComment + 1)}`
 
-        const commentBody = `\n${formatCommentoHeader(commentId, date, firma)}\n${testo}\n`
+        const commentBody = `\n${formatCommentoHeader(commentId, date, firma)}\n${testo}\n\n`
 
         // Verifica se esiste già la sezione Commenti nel blocco
         const commentiLine = findLineByPatternInRange(

@@ -1,4 +1,4 @@
-import path from 'node:path'
+import { join } from 'node:path'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { z } from 'zod'
@@ -7,13 +7,12 @@ import { readRaw, replaceRange } from '../../operations/atomic.js'
 import { parseMarkdown } from '../../parser/markdown.js'
 import { findSectionByHeading, getHeadingText } from '../../parser/sections.js'
 import { validateStrings, validateEnum } from '../../operations/validate.js'
+import { documentiDir, resolveDocPath } from '../../config/paths.js'
 import type { Heading } from 'mdast'
 
-const basePath = process.env.OPERA_BASE_PATH || '/opera'
-
 const FASE_DIRS: Record<string, string> = {
-  P0: 'documenti/definizione',
-  P1: 'documenti/analisi'
+  P0: 'definizione',
+  P1: 'analisi'
 }
 
 const VALID_FASI = ['P0', 'P1'] as const
@@ -72,19 +71,6 @@ const SEZIONI_PER_DOCUMENTO: Record<string, string[]> = {
   ]
 }
 
-function resolveDocPath(relativePath: string): string {
-  const normalized = path.normalize(relativePath)
-  if (!normalized.startsWith('documenti/') && !normalized.startsWith('documenti\\')) {
-    throw new Error(
-      `Il path deve essere sotto "documenti/". Ricevuto: ${relativePath}`
-    )
-  }
-  const full = path.resolve(basePath, normalized)
-  if (!full.startsWith(path.join(basePath, 'documenti'))) {
-    throw new Error(`Path non valido: ${relativePath}`)
-  }
-  return full
-}
 
 function generateScaffold(numeroNome: string): string {
   const titolo = TITOLI_DOCUMENTO[numeroNome] ?? numeroNome
@@ -134,14 +120,14 @@ export function registerFasiWriteTools(): void {
         }
       }
 
-      const dir = path.join(basePath, FASE_DIRS[fase])
-      const filePath = path.join(dir, `${numero_nome}.md`)
+      const dir = join(documentiDir, FASE_DIRS[fase])
+      const filePath = join(dir, `${numero_nome}.md`)
 
       if (existsSync(filePath)) {
         return {
           content: [{
             type: 'text',
-            text: `Il file esiste già: ${FASE_DIRS[fase]}/${numero_nome}.md`
+            text: `Il file esiste già: documenti/${FASE_DIRS[fase]}/${numero_nome}.md`
           }],
           isError: true
         }
@@ -154,7 +140,7 @@ export function registerFasiWriteTools(): void {
       return {
         content: [{
           type: 'text',
-          text: `Documento creato: ${FASE_DIRS[fase]}/${numero_nome}.md`
+          text: `Documento creato: documenti/${FASE_DIRS[fase]}/${numero_nome}.md`
         }]
       }
     }

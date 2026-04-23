@@ -1,12 +1,9 @@
-import path from 'node:path'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
 import { readRaw } from '../../operations/atomic.js'
 import { parseMarkdown } from '../../parser/markdown.js'
 import { findBlockByHeadingId, getHeadingText } from '../../parser/sections.js'
-
-const basePath = process.env.OPERA_BASE_PATH || '/opera'
-const mastroPath = () => path.join(basePath, 'mastro.md')
+import { mastroPath } from '../../config/paths.js'
 
 export function registerMastroReadTools(): void {
   registerTool({

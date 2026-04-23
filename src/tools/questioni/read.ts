@@ -1,4 +1,3 @@
-import path from 'node:path'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
 import { readRaw } from '../../operations/atomic.js'
@@ -10,9 +9,7 @@ import {
   type BlockRange
 } from '../../parser/sections.js'
 import { validateEnum, VALID_STATES } from '../../operations/validate.js'
-
-const basePath = process.env.OPERA_BASE_PATH || '/opera'
-const questioniPath = () => path.join(basePath, 'questioni.md')
+import { questioniPath } from '../../config/paths.js'
 
 /**
  * Trova il blocco di una questione per ID.

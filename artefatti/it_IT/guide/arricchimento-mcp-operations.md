@@ -179,7 +179,8 @@ senza attendere la chiamata a `configure`.
 Il file ha una struttura YAML annidata in cui ogni
 arricchimento è una chiave sotto `arricchimenti:`
 con `enabled: true/false` e i propri parametri. Un
-arricchimento assente dal file equivale a disabilitato.
+arricchimento assente dal file equivale a
+disabilitato.
 
 ```yaml
 arricchimenti:
@@ -191,6 +192,16 @@ arricchimenti:
     enabled: true
     lingua: it_IT
 ```
+
+Gli arricchimenti configurabili corrispondono in
+rapporto 1:1 agli arricchimenti del protocollo
+Hodos che il server gestisce: `fasi-p0-p4`,
+`firma-utente`, `compressione-mastro`,
+`versionamento-git`, `rag` e `redazionale`. Di
+questi, solo il `redazionale` accetta parametri
+specifici oltre a `enabled`; gli altri funzionano
+come interruttori on/off che abilitano o
+disabilitano tool e comportamenti condizionati.
 
 Il file viene bindato come volume nel Docker Compose:
 
@@ -205,7 +216,16 @@ arricchimenti pre-attivati, come nelle versioni
 precedenti. Il tool `configure` resta disponibile
 come override a runtime. Un tool `update_config`
 consente di modificare il file dall'interno della
-sessione MCP.
+sessione MCP, accettando un path puntato (es.
+`arricchimenti.redazionale.enabled`) e un valore
+scalare; la modifica viene persisita su disco e
+applicata in memoria senza riavvio del server.
+
+Il file di configurazione è compatibile in avanti:
+arricchimenti non riconosciuti dal server vengono
+ignorati con un warning, senza interrompere
+l'avvio. Questo consente di aggiornare il server
+senza migrare il file di configurazione.
 
 ---
 

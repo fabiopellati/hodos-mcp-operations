@@ -52,6 +52,7 @@ services:
       - "${MCP_PORT:-3100}:3100"
     volumes:
       - "${OPERA_PATH:-.}:/opera"
+      - "./hodos-operations.yml:/opera/hodos-operations.yml"
     environment:
       - PORT=3100
       - OPERA_ROOT=/opera
@@ -82,6 +83,81 @@ curl -s http://localhost:3100/health
   (usato nel compose per il bind mount)
 - `MCP_PORT` — porta esposta sull'host
   (default: `3100`)
+- `HODOS_CONFIG_PATH` — path del file di
+  configurazione dentro il container (default:
+  `${OPERA_ROOT}/hodos-operations.yml`)
+
+## Configurazione persistente
+
+Il server supporta un file `hodos-operations.yml`
+che dichiara gli arricchimenti attivi e i relativi
+parametri. Il file viene letto all'avvio: gli
+arricchimenti con `enabled: true` vengono
+pre-attivati senza attendere la chiamata a
+`configure`.
+
+Creare il file nella directory dell'opera prima di
+avviare il container:
+
+```bash
+touch hodos-operations.yml
+```
+
+### Struttura del file
+
+```yaml
+arricchimenti:
+  fasi-p0-p4:
+    enabled: true
+  firma-utente:
+    enabled: true
+  compressione-mastro:
+    enabled: false
+  versionamento-git:
+    enabled: true
+  rag:
+    enabled: false
+  redazionale:
+    enabled: true
+    lingua: it_IT
+    wrap-colonne: 80
+    accenti: true
+    emoji: false
+    stile-discorsivo: true
+    tabelle-markdown: false
+    formato-data: Y-m-d
+    formato-ora: H:i
+```
+
+Un arricchimento assente dal file equivale a
+`enabled: false`. I parametri specifici di ogni
+arricchimento hanno default sensati; se omessi,
+il server usa i default.
+
+### Parametri dell'arricchimento redazionale
+
+- `lingua` (obbligatorio) — locale nel formato
+  `xx_YY` (es. `it_IT`). Determina la strategy
+  di default per le direttive
+- `wrap-colonne` — numero colonne per il wrap
+  (default dalla strategy, es. 80 per it_IT;
+  range ammesso: 40-120)
+- `accenti` — sostituzione apostrofi con accenti
+  (default: `true` per it_IT)
+- `emoji` — se `false`, rimuove i caratteri emoji
+  dal testo (default: `false` per it_IT)
+- `stile-discorsivo` — direttiva persuasiva per
+  stile con subordinate (default: `true` per it_IT)
+- `tabelle-markdown` — se `false`, direttiva
+  persuasiva che preferisce elenchi a tabelle
+  (default: `false` per it_IT)
+- `formato-data` — formato data con placeholder
+  `Y` (anno), `m` (mese), `d` (giorno).
+  Default per it_IT: `d/m/Y`
+- `formato-ora` — formato ora con placeholder
+  `H` (24h), `h` (12h), `i` (minuti), `s`
+  (secondi), `A` (AM/PM).
+  Default per it_IT: `H:i`
 
 ## Configurazione del client MCP
 
@@ -150,6 +226,7 @@ services:
       - "${MCP_PORT:-3100}:3100"
     volumes:
       - "${OPERA_PATH:-.}:/opera"
+      - "./hodos-operations.yml:/opera/hodos-operations.yml"
     environment:
       - PORT=3100
       - OPERA_ROOT=/opera
@@ -258,6 +335,18 @@ esplicita, i volumi possono essere dichiarati come
 - `update_rfc_sezione` — aggiorna una sezione della
   RFC
 - `write_rfc_response` — compila la sezione Response
+
+- `update_config` — modifica il file di configurazione
+  hodos-operations.yml. Accetta un path puntato
+  (es. `arricchimenti.redazionale.enabled`) e un
+  valore. Persiste la modifica su disco
+
+### Tool condizionati (arricchimento redazionale)
+
+- `normalize_file` — normalizza un file markdown con
+  Pandoc commonmark_x. Riprocessa l'intero file:
+  altera il diff git. Usare solo su richiesta
+  esplicita dell'operatore
 
 ### Tool condizionati (arricchimento fasi-p0-p4)
 

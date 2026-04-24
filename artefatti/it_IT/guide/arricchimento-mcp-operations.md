@@ -163,6 +163,89 @@ skill `arricchimento-mcp-operations` tramite il tool
 
 ---
 
+## Configurazione persistente
+
+Il server supporta un file di configurazione locale
+(`hodos-operations.yml`) che l'operatore mantiene
+nella directory dell'opera. Il server legge il file
+all'avvio e pre-attiva gli arricchimenti dichiarati,
+senza attendere la chiamata a `configure`.
+
+Il file ha una struttura YAML annidata in cui ogni
+arricchimento è una chiave sotto `arricchimenti:`
+con `enabled: true/false` e i propri parametri. Un
+arricchimento assente dal file equivale a disabilitato.
+
+```yaml
+arricchimenti:
+  fasi-p0-p4:
+    enabled: true
+  firma-utente:
+    enabled: true
+  redazionale:
+    enabled: true
+    lingua: it_IT
+```
+
+Il file viene bindato come volume nel Docker Compose:
+
+```yaml
+volumes:
+  - "${OPERA_PATH:-.}:/opera"
+  - "./hodos-operations.yml:/opera/hodos-operations.yml"
+```
+
+Se il file non esiste, il server parte senza
+arricchimenti pre-attivati, come nelle versioni
+precedenti. Il tool `configure` resta disponibile
+come override a runtime. Un tool `update_config`
+consente di modificare il file dall'interno della
+sessione MCP.
+
+---
+
+## Arricchimento redazionale
+
+L'arricchimento `redazionale` fornisce direttive di
+formattazione del testo che il server applica
+automaticamente ai parametri testuali dei tool di
+scrittura. Le direttive si dividono in due categorie:
+
+Le **direttive deterministiche** vengono applicate
+dal server come pipeline di pre-processing sul testo
+in ingresso, prima dell'inserimento nel file. L'agente
+non deve preoccuparsi di applicarle:
+
+- sostituzione degli apostrofi con accenti italiani
+  corretti (distinzione grave/acuto)
+- rimozione dei caratteri emoji decorativi
+- normalizzazione del formato markdown e wrap colonne
+  tramite Pandoc `commonmark_x`
+- formattazione delle date nel formato configurato
+  dalla locale
+
+Le **direttive persuasive** vengono comunicate
+all'agente nella risposta di `configure` come
+indicazioni stilistiche:
+
+- stile discorsivo con subordinate
+- preferenza per elenchi puntati
+- preferenza per elenchi nidificati rispetto alle
+  tabelle markdown
+
+L'arricchimento usa un pattern strategy basato sulla
+locale completa (`it_IT`, `en_US`, ecc.): ogni locale
+definisce i default delle direttive, sovrascrivibili
+nel file di configurazione. Per ora è implementata la
+strategy `it_IT`.
+
+Un tool opzionale `normalize_file` consente di
+normalizzare un file intero con Pandoc. Questa
+operazione altera il diff git e va invocata solo su
+richiesta esplicita dell'operatore.
+
+---
+
 ## Rapporto con il protocollo base
 
 L'arricchimento non modifica il protocollo Hodos: le

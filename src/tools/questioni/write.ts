@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
+import { processText } from '../../enrichments/redazionale/pipeline.js'
 import {
   atomicFileOperation,
   insertAt,
@@ -166,6 +167,19 @@ export function registerQuestioniWriteTools(): void {
       const parsed = schema.parse(params)
       validateStrings({ titolo: parsed.titolo, descrizione: parsed.descrizione })
 
+      // Elaborazione redazionale dei campi di testo libero
+      const titolo = await processText(parsed.titolo)
+      const descrizione = await processText(parsed.descrizione)
+      const domande_aperte = parsed.domande_aperte
+        ? await Promise.all(parsed.domande_aperte.map(d => processText(d)))
+        : undefined
+      const impatto = parsed.impatto
+        ? await Promise.all(parsed.impatto.map(async imp => ({
+            artefatto: imp.artefatto,
+            descrizione: await processText(imp.descrizione)
+          })))
+        : undefined
+
       let createdId = ''
 
       await atomicFileOperation(questioniPath(), (content, tree) => {
@@ -181,7 +195,7 @@ export function registerQuestioniWriteTools(): void {
         const indexInfo = findIndexTable(tree)
         if (indexInfo) {
           const { offset: rowOffset, needsNewline } = findFirstDataRowOffset(indexInfo.table)
-          const newRow = `${needsNewline ? '\n' : ''}| ${id} | ${parsed.titolo} | open |\n`
+          const newRow = `${needsNewline ? '\n' : ''}| ${id} | ${titolo} | open |\n`
           result = insertAt(result, rowOffset, newRow)
           // Dopo l'inserimento, tutti gli offset successivi sono spostati
           // di newRow.length. Ricalcoliamo l'AST per le operazioni successive.
@@ -193,23 +207,23 @@ export function registerQuestioniWriteTools(): void {
         // 2. Inserisci il blocco corpo dopo il separatore dell'indice
         const bodyOffset = findBodyInsertOffset(tree2)
 
-        let body = `\n\n## ${id} — ${parsed.titolo}\n\n`
+        let body = `\n\n## ${id} — ${titolo}\n\n`
         body += `**Tipo**: ${parsed.tipo}\n`
         body += `**Stato**: open\n\n`
         body += `**Storia**\n\n`
-        body += `${formatStoriaEntry(date, 'open', parsed.titolo, parsed.firma)}\n\n`
+        body += `${formatStoriaEntry(date, 'open', titolo, parsed.firma)}\n\n`
         body += `**Descrizione**\n\n`
-        body += `${parsed.descrizione}\n\n`
-        if (parsed.domande_aperte && parsed.domande_aperte.length > 0) {
+        body += `${descrizione}\n\n`
+        if (domande_aperte && domande_aperte.length > 0) {
           body += `**Domande aperte**\n\n`
-          for (const d of parsed.domande_aperte) {
+          for (const d of domande_aperte) {
             body += `- [ ] ${d}\n`
           }
           body += `\n`
         }
-        if (parsed.impatto && parsed.impatto.length > 0) {
+        if (impatto && impatto.length > 0) {
           body += `**Impatto**\n\n`
-          for (const imp of parsed.impatto) {
+          for (const imp of impatto) {
             body += `- ${imp.artefatto} — ${imp.descrizione}\n`
           }
           body += `\n`
@@ -250,14 +264,16 @@ export function registerQuestioniWriteTools(): void {
     category: 'base',
     requiredEnrichments: [],
     handler: async (params: unknown): Promise<ToolResult> => {
-      const { id, nuovo_stato, motivazione, firma } = z.object({
+      const { id, nuovo_stato, motivazione: rawMotivazione, firma } = z.object({
         id: z.string(),
         nuovo_stato: z.string(),
         motivazione: z.string(),
         firma: z.string().optional()
       }).parse(params)
       validateEnum(nuovo_stato, VALID_STATES, 'nuovo_stato')
-      validateStrings({ motivazione })
+      validateStrings({ motivazione: rawMotivazione })
+
+      const motivazione = await processText(rawMotivazione)
 
       await atomicFileOperation(questioniPath(), (content, tree) => {
         const date = today()
@@ -372,12 +388,14 @@ export function registerQuestioniWriteTools(): void {
     category: 'base',
     requiredEnrichments: [],
     handler: async (params: unknown): Promise<ToolResult> => {
-      const { id, testo, firma } = z.object({
+      const { id, testo: rawTesto, firma } = z.object({
         id: z.string(),
         testo: z.string(),
         firma: z.string().optional()
       }).parse(params)
-      validateStrings({ testo })
+      validateStrings({ testo: rawTesto })
+
+      const testo = await processText(rawTesto)
 
       await atomicFileOperation(questioniPath(), (content, tree) => {
         const block = findBlockByHeadingId(tree, id)
@@ -435,11 +453,13 @@ export function registerQuestioniWriteTools(): void {
     category: 'base',
     requiredEnrichments: [],
     handler: async (params: unknown): Promise<ToolResult> => {
-      const { id, domanda } = z.object({
+      const { id, domanda: rawDomanda } = z.object({
         id: z.string(),
         domanda: z.string()
       }).parse(params)
-      validateStrings({ domanda })
+      validateStrings({ domanda: rawDomanda })
+
+      const domanda = await processText(rawDomanda)
 
       await atomicFileOperation(questioniPath(), (content, tree) => {
         const block = findBlockByHeadingId(tree, id)
@@ -495,12 +515,14 @@ export function registerQuestioniWriteTools(): void {
     category: 'base',
     requiredEnrichments: [],
     handler: async (params: unknown): Promise<ToolResult> => {
-      const { id, artefatto, descrizione } = z.object({
+      const { id, artefatto, descrizione: rawDescrizione } = z.object({
         id: z.string(),
         artefatto: z.string(),
         descrizione: z.string()
       }).parse(params)
-      validateStrings({ artefatto, descrizione })
+      validateStrings({ artefatto, descrizione: rawDescrizione })
+
+      const descrizione = await processText(rawDescrizione)
 
       await atomicFileOperation(questioniPath(), (content, tree) => {
         const block = findBlockByHeadingId(tree, id)
@@ -701,13 +723,15 @@ export function registerQuestioniWriteTools(): void {
     category: 'base',
     requiredEnrichments: [],
     handler: async (params: unknown): Promise<ToolResult> => {
-      const { path: filePath, sezione, indice, nota, id } = z.object({
+      const { path: filePath, sezione, indice, nota: rawNota, id } = z.object({
         path: z.string(),
         sezione: z.string(),
         indice: z.number().int().min(1),
         nota: z.string().optional(),
         id: z.string().optional()
       }).parse(params)
+
+      const nota = rawNota ? await processText(rawNota) : undefined
 
       const fullPath = path.isAbsolute(filePath)
         ? filePath
@@ -773,14 +797,16 @@ export function registerQuestioniWriteTools(): void {
     category: 'base',
     requiredEnrichments: [],
     handler: async (params: unknown): Promise<ToolResult> => {
-      const { path: filePath, sezione, indice, nota, id } = z.object({
+      const { path: filePath, sezione, indice, nota: rawNota, id } = z.object({
         path: z.string(),
         sezione: z.string(),
         indice: z.number().int().min(1),
         nota: z.string(),
         id: z.string().optional()
       }).parse(params)
-      validateStrings({ nota })
+      validateStrings({ nota: rawNota })
+
+      const nota = await processText(rawNota)
 
       const fullPath = path.isAbsolute(filePath)
         ? filePath

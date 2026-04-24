@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { readFile, writeFile } from 'node:fs/promises'
 import { registerTool, type ToolResult } from '../../server.js'
+import { processText } from '../../enrichments/redazionale/pipeline.js'
 import { parseMarkdown } from '../../parser/markdown.js'
 import {
   findIndexTable,
@@ -66,6 +67,14 @@ export function registerCloseQuestioneTools(): void {
         decisioni: parsed.decisioni,
         impatto: parsed.impatto
       })
+
+      // Elaborazione redazionale dei campi di testo libero
+      const titolo = await processText(parsed.titolo)
+      const percorso = parsed.percorso
+        ? await processText(parsed.percorso)
+        : undefined
+      const decisioni = await processText(parsed.decisioni)
+      const impatto = await processText(parsed.impatto)
 
       if (!parsed.percorso && isPercorsoRequired()) {
         return {
@@ -149,15 +158,15 @@ export function registerCloseQuestioneTools(): void {
       // 2a. Prepara entry mastro
       const mastroOffset = findAfterTitleOffset(mastroTree)
 
-      let entry = `\n\n## ${date} — Chiusura ${parsed.id}: ${parsed.titolo}\n\n`
-      entry += `**Questione**: ${parsed.id} — ${parsed.titolo}\n\n`
+      let entry = `\n\n## ${date} — Chiusura ${parsed.id}: ${titolo}\n\n`
+      entry += `**Questione**: ${parsed.id} — ${titolo}\n\n`
 
-      if (parsed.percorso && !isCompressioneActive()) {
-        entry += `**Percorso**\n\n${parsed.percorso}\n\n`
+      if (percorso && !isCompressioneActive()) {
+        entry += `**Percorso**\n\n${percorso}\n\n`
       }
 
-      entry += `**Decisioni prese**\n\n${parsed.decisioni}\n\n`
-      entry += `**Impatto**\n\n${parsed.impatto}\n\n---\n`
+      entry += `**Decisioni prese**\n\n${decisioni}\n\n`
+      entry += `**Impatto**\n\n${impatto}\n\n---\n`
 
       const mastroResult = insertAt(mastroContent, mastroOffset, entry)
 

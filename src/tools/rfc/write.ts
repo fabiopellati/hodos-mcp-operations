@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
+import { processText } from '../../enrichments/redazionale/pipeline.js'
 import { validateStrings, validateEnum } from '../../operations/validate.js'
 import { readRaw, replaceRange } from '../../operations/atomic.js'
 import { parseMarkdown } from '../../parser/markdown.js'
@@ -142,6 +143,15 @@ async function handleCreateRfc(params: unknown): Promise<ToolResult> {
   validateDate(parsed.data, 'data')
   validateSlug(parsed.slug)
 
+  // Elaborazione redazionale dei campi di testo libero
+  const processed = {
+    ...parsed,
+    contesto: await processText(parsed.contesto),
+    richiesta: await processText(parsed.richiesta),
+    motivazione: await processText(parsed.motivazione),
+    criteri: await processText(parsed.criteri)
+  }
+
   // Verifica che non esista già un file RFC per lo stesso ID
   try {
     await findRfcFile(parsed.questione_id)
@@ -162,7 +172,7 @@ async function handleCreateRfc(params: unknown): Promise<ToolResult> {
 
   try {
     await mkdir(rfcDir, { recursive: true })
-    const content = buildRfcContent(parsed)
+    const content = buildRfcContent(processed)
     await writeFile(filePath, content, { encoding: 'utf-8', flag: 'wx' })
     return {
       content: [{
@@ -212,6 +222,8 @@ async function handleUpdateRfc(params: unknown): Promise<ToolResult> {
     contenuto: parsed.contenuto
   })
 
+  const contenuto = await processText(parsed.contenuto)
+
   const headingText = SECTION_MAP[parsed.sezione]
   if (!headingText) {
     return {
@@ -252,7 +264,7 @@ async function handleUpdateRfc(params: unknown): Promise<ToolResult> {
     const contentStart = headingNode.position?.end.offset ?? section.startOffset
     const contentEnd = section.endOffset
 
-    const newContent = `\n\n${parsed.contenuto}\n\n`
+    const newContent = `\n\n${contenuto}\n\n`
     const updated = replaceRange(content, contentStart, contentEnd, newContent)
     await writeFile(filePath, updated, 'utf-8')
 
@@ -298,6 +310,11 @@ async function handleWriteResponseRfc(params: unknown): Promise<ToolResult> {
   validateDate(parsed.data, 'data')
   validateEnum(parsed.stato, VALID_RFC_STATES, 'stato')
 
+  // Elaborazione redazionale dei campi di testo libero
+  const decisione = await processText(parsed.decisione)
+  const lavoro = await processText(parsed.lavoro)
+  const deviazioni = await processText(parsed.deviazioni)
+
   try {
     const filePath = await findRfcFile(parsed.questione_id)
     const content = await readRaw(filePath)
@@ -334,15 +351,15 @@ async function handleWriteResponseRfc(params: unknown): Promise<ToolResult> {
 
 ### Decisione
 
-${parsed.decisione}
+${decisione}
 
 ### Lavoro svolto
 
-${parsed.lavoro}
+${lavoro}
 
 ### Deviazioni
 
-${parsed.deviazioni}
+${deviazioni}
 `
     const updatedContent = content.slice(0, markerIndex) + newResponseContent
     await writeFile(filePath, updatedContent, 'utf-8')

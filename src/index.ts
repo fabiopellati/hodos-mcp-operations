@@ -1,9 +1,21 @@
 import { randomUUID } from 'node:crypto'
 import { createServer as createHttpServer } from 'node:http'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
-import { createServer } from './server.js'
+import { createServer, updateVisibility, setLoadedConfig } from './server.js'
+import { loadConfigFile, getEnabledEnrichments } from './config/config-file.js'
 
 const port = parseInt(process.env.PORT || '3100', 10)
+
+// Caricamento configurazione persistente all'avvio
+const config = await loadConfigFile()
+if (config) {
+  setLoadedConfig(config)
+  const enrichments = getEnabledEnrichments(config)
+  if (enrichments.length > 0) {
+    updateVisibility(enrichments)
+    console.log(`Configurazione caricata: ${enrichments.join(', ')}`)
+  }
+}
 
 // Stateful: un McpServer per sessione, con session ID
 const sessions = new Map<string, StreamableHTTPServerTransport>()

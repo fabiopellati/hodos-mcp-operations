@@ -37,6 +37,7 @@ const SEZIONI_PER_DOCUMENTO: Record<string, string[]> = {
   '1-obiettivi': [
     'Contesto',
     'Obiettivi del progetto',
+    'Vincoli',
     'Stakeholder',
     'Criteri di successo'
   ],
@@ -51,8 +52,7 @@ const SEZIONI_PER_DOCUMENTO: Record<string, string[]> = {
     'Scenari secondari'
   ],
   '4-requisiti': [
-    'Requisiti funzionali',
-    'Requisiti non funzionali'
+    'Requisiti funzionali'
   ],
   '5-vincoli': [
     'Vincoli tecnici',
@@ -66,7 +66,7 @@ const SEZIONI_PER_DOCUMENTO: Record<string, string[]> = {
     'Decisioni architetturali'
   ],
   '7-piano-esecutivo': [
-    'Componenti',
+    'Unità di lavoro',
     'Ordine di sviluppo',
     'Milestone'
   ]

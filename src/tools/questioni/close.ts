@@ -15,8 +15,7 @@ import {
 import { validateStrings } from '../../operations/validate.js'
 import { isCompressioneActive, isPercorsoRequired } from '../../enrichments/compressione.js'
 import { questioniPath, mastroPath } from '../../config/paths.js'
-
-const today = () => new Date().toISOString().slice(0, 10)
+import { today } from '../../operations/date.js'
 
 /**
  * Trova il thematicBreak (---) alla fine di un blocco questione.

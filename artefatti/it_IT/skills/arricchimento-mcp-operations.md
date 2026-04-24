@@ -135,6 +135,49 @@ Un arricchimento assente dal file equivale a
 arricchimento hanno default sensati; se omessi,
 il server usa i default.
 
+### Arricchimenti disponibili
+
+Gli arricchimenti configurabili nel file
+`hodos-operations.yml` corrispondono in rapporto
+1:1 agli arricchimenti del protocollo Hodos che il
+server è in grado di gestire. L'elenco completo è
+il seguente:
+
+- `fasi-p0-p4` — abilita i tool per la gestione
+  dei documenti di fase (P0-P4) e delle attività
+  delle unità di realizzazione. Non accetta
+  parametri oltre a `enabled`
+- `firma-utente` — attiva la formattazione della
+  firma dell'operatore nelle voci di storia, nei
+  commenti e nelle note. La firma viene passata
+  come parametro nei tool di scrittura quando
+  l'arricchimento è attivo. Non accetta parametri
+  oltre a `enabled`
+- `compressione-mastro` — quando attivo, il campo
+  Percorso nella chiusura delle questioni diventa
+  opzionale anziché obbligatorio. Il percorso viene
+  omesso dall'entry del mastro anche se fornito.
+  Non accetta parametri oltre a `enabled`
+- `versionamento-git` — dichiarato come
+  arricchimento valido ma non ancora implementato
+  nel codice del server. Può essere abilitato senza
+  effetti collaterali; è riservato per future
+  estensioni. Non accetta parametri oltre a
+  `enabled`
+- `rag` — abilita la ricerca semantica nei
+  contenuti dell'opera tramite Qdrant e un modello
+  di embedding multilingua. Richiede i servizi
+  Qdrant e Redis (descritti nella sezione Opzione
+  RAG). Non accetta parametri nel file di
+  configurazione; le impostazioni di connessione
+  sono gestite tramite variabili d'ambiente
+- `redazionale` — fornisce direttive di
+  formattazione del testo, con una pipeline di
+  pre-processing automatico e direttive persuasive
+  per l'agente. È l'unico arricchimento che accetta
+  parametri specifici oltre a `enabled`, descritti
+  nella sezione seguente
+
 ### Parametri dell'arricchimento redazionale
 
 - `lingua` (obbligatorio) — locale nel formato
@@ -189,7 +232,7 @@ venga stabilita.
 
 La versione corrente dell'arricchimento
 mcp-operations documentata in questo skill è
-**0.5.1**. Il tool `configure` restituisce la
+**0.5.2**. Il tool `configure` restituisce la
 versione del server nel campo `versione` della
 risposta. Se la versione del server è inferiore a
 quella documentata qui, alcune feature descritte in
@@ -200,12 +243,41 @@ In tal caso, segnalare all'operatore che il server
 ```
 Il server mcp-operations in esecuzione è alla
 versione X.Y.Z, ma la documentazione descrive la
-versione 0.5.1. Alcune feature potrebbero non
+versione 0.5.2. Alcune feature potrebbero non
 essere disponibili. Per aggiornare:
 
 docker compose pull
 docker compose up -d
 ```
+
+### Compatibilità tra versioni
+
+Il file `hodos-operations.yml` è compatibile in
+avanti: se contiene arricchimenti non riconosciuti
+dal server in esecuzione (perché introdotti in una
+versione successiva), il server li ignora con un
+warning in console senza interrompere l'avvio.
+Questo consente di mantenere lo stesso file di
+configurazione anche durante un downgrade
+temporaneo del server.
+
+La procedura di aggiornamento standard non
+richiede migrazioni del file di configurazione:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Non esiste al momento una matrice formale di
+compatibilità versione server / versione skill.
+Il criterio operativo è il seguente: se il tool
+`configure` restituisce una versione inferiore a
+quella documentata nello skill, i tool e i
+parametri introdotti nelle versioni successive
+potrebbero non essere disponibili, ma le
+funzionalità preesistenti continuano a funzionare
+senza modifiche.
 
 ## Primo utilizzo
 
@@ -360,9 +432,68 @@ esplicita, i volumi possono essere dichiarati come
 - `write_rfc_response` — compila la sezione Response
 
 - `update_config` — modifica il file di configurazione
-  hodos-operations.yml. Accetta un path puntato
-  (es. `arricchimenti.redazionale.enabled`) e un
-  valore. Persiste la modifica su disco
+  hodos-operations.yml. Accetta un path puntato e un
+  valore, persiste la modifica su disco e aggiorna
+  la configurazione in memoria. Descritto in
+  dettaglio nella sezione seguente
+
+### Dettaglio del tool update_config
+
+Il tool `update_config` consente di modificare il
+file `hodos-operations.yml` dall'interno della
+sessione MCP senza editare il file direttamente.
+
+**Parametri**:
+- `path` (stringa, obbligatorio) — percorso
+  puntato nella struttura YAML, con segmenti
+  separati da punto. Esempio:
+  `arricchimenti.redazionale.enabled`
+- `value` (stringa, numero o booleano,
+  obbligatorio) — il nuovo valore da assegnare.
+  Non sono ammessi array, oggetti, null o
+  undefined
+
+**Validazione**: il tool esegue tre controlli
+prima di applicare la modifica:
+- il path deve contenere almeno due segmenti
+  (es. `arricchimenti.nome` è valido,
+  `arricchimenti` da solo è rifiutato)
+- il primo segmento deve essere `arricchimenti`
+- il secondo segmento deve essere un nome di
+  arricchimento valido (`fasi-p0-p4`,
+  `firma-utente`, `compressione-mastro`,
+  `versionamento-git`, `rag`, `redazionale`)
+
+Il tool non valida i nomi delle proprietà
+annidate né i tipi dei valori rispetto allo
+schema dell'arricchimento. Se il path punta a
+una struttura intermedia che non esiste, il tool
+la crea automaticamente come oggetto vuoto.
+
+**Sequenza di operazioni**: dopo la validazione
+il tool carica il file di configurazione corrente
+(o ne crea uno vuoto se non esiste), applica il
+valore al path indicato, scrive il file su disco,
+aggiorna la configurazione in memoria e ricalcola
+la visibilità dei tool condizionati.
+
+**Risposta**: il tool restituisce un oggetto con
+tre campi:
+- `messaggio` — conferma dell'operazione con
+  path e valore applicato
+- `arricchimenti_attivi` — elenco degli
+  arricchimenti attualmente abilitati
+- `configurazione` — la configurazione completa
+  aggiornata
+
+Esempio di utilizzo:
+
+```json
+{
+  "path": "arricchimenti.redazionale.wrap-colonne",
+  "value": 72
+}
+```
 
 ### Tool condizionati (arricchimento redazionale)
 

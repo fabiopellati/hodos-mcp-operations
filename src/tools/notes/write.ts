@@ -13,9 +13,8 @@ import {
 import { validateStrings } from '../../operations/validate.js'
 import { formatCommentoHeader, formatNotaAutore } from '../../enrichments/firma.js'
 import { notesPath } from '../../config/paths.js'
+import { today } from '../../operations/date.js'
 import { findNotaBlock } from './read.js'
-
-const today = () => new Date().toISOString().slice(0, 10)
 
 function padId(num: number): string {
   return String(num).padStart(3, '0')

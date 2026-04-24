@@ -195,7 +195,7 @@ export function registerFasiWriteTools(): void {
       const bodyStart = headingNode.position?.end.offset ?? section.startOffset
       const bodyEnd = section.endOffset
 
-      const newBody = '\n\n' + contenuto.trim() + '\n'
+      const newBody = '\n\n' + contenuto.trim() + '\n\n'
       const modified = replaceRange(content, bodyStart, bodyEnd, newBody)
       await writeFile(filePath, modified, 'utf-8')
 

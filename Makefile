@@ -1,4 +1,4 @@
-.PHONY: install build dev typecheck clean up down up-rag down-rag down-rag-clean
+.PHONY: install build dev typecheck test clean up down up-rag down-rag down-rag-clean
 
 install: ## Installa dipendenze via container
 	docker compose --profile dev run --rm dev -c "npm install"
@@ -8,6 +8,9 @@ build: ## Compila TypeScript via container
 
 typecheck: ## Verifica tipi senza emettere output
 	docker compose --profile dev run --rm dev -c "npx tsc --noEmit"
+
+test: ## Esegue test via container
+	docker compose --profile dev run --rm dev -c "find src -name '*.test.ts' | xargs npx tsx --test"
 
 dev: ## Avvia server in modalita' sviluppo
 	docker compose --profile dev run --rm --service-ports -p 3100:3100 dev -c "npx tsx src/index.ts"

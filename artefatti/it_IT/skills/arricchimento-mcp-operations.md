@@ -1,4 +1,5 @@
 ---
+tipo-artefatto: skill
 skill: arricchimento-mcp-operations
 client: Claude Code CLI
 invocazione: /hodos-arricchimento-mcp-operations

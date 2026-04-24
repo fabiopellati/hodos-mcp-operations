@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { writeFile } from 'node:fs/promises'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
+import { processText } from '../../enrichments/redazionale/pipeline.js'
 import { readRaw, insertAt } from '../../operations/atomic.js'
 import { parseMarkdown } from '../../parser/markdown.js'
 import { getHeadingText } from '../../parser/sections.js'
@@ -38,7 +39,13 @@ export function registerAttivitaWriteTools(): void {
     category: 'conditional',
     requiredEnrichments: ['fasi-p0-p4'],
     handler: async (params: unknown): Promise<ToolResult> => {
-      const { unita, titolo, richiesta, criteri, note } = z.object({
+      const {
+        unita,
+        titolo: rawTitolo,
+        richiesta: rawRichiesta,
+        criteri: rawCriteri,
+        note: rawNote
+      } = z.object({
         unita: z.string(),
         titolo: z.string(),
         richiesta: z.string(),
@@ -46,8 +53,14 @@ export function registerAttivitaWriteTools(): void {
         note: z.string().optional()
       }).parse(params)
 
-      validateStrings({ unita, titolo, richiesta, criteri })
-      if (note) validateStrings({ note })
+      validateStrings({ unita, titolo: rawTitolo, richiesta: rawRichiesta, criteri: rawCriteri })
+      if (rawNote) validateStrings({ note: rawNote })
+
+      // Elaborazione redazionale dei campi di testo libero
+      const titolo = await processText(rawTitolo)
+      const richiesta = await processText(rawRichiesta)
+      const criteri = await processText(rawCriteri)
+      const note = rawNote ? await processText(rawNote) : undefined
 
       const filePath = attivitaPath(unita)
       const content = await readRaw(filePath)
@@ -86,7 +99,7 @@ export function registerAttivitaWriteTools(): void {
     category: 'conditional',
     requiredEnrichments: ['fasi-p0-p4'],
     handler: async (params: unknown): Promise<ToolResult> => {
-      const { unita, bl_id, data, conformita, descrizione } = z.object({
+      const { unita, bl_id, data, conformita, descrizione: rawDescrizione } = z.object({
         unita: z.string(),
         bl_id: z.string(),
         data: z.string(),
@@ -94,8 +107,10 @@ export function registerAttivitaWriteTools(): void {
         descrizione: z.string()
       }).parse(params)
 
-      validateStrings({ unita, data, conformita, descrizione })
+      validateStrings({ unita, data, conformita, descrizione: rawDescrizione })
       validateEnum(conformita, VALID_CONFORMITA, 'conformita')
+
+      const descrizione = await processText(rawDescrizione)
 
       if (!DATA_REGEX.test(data)) {
         throw new Error(

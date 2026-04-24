@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
+import { processText } from '../../enrichments/redazionale/pipeline.js'
 import { atomicFileOperation, insertAt, replaceRange } from '../../operations/atomic.js'
 import { parseMarkdown } from '../../parser/markdown.js'
 import {
@@ -55,12 +56,15 @@ export function registerNotesWriteTools(): void {
     category: 'base',
     requiredEnrichments: [],
     handler: async (params: unknown): Promise<ToolResult> => {
-      const { descrizione, corpo, firma } = z.object({
+      const { descrizione: rawDescrizione, corpo: rawCorpo, firma } = z.object({
         descrizione: z.string(),
         corpo: z.string(),
         firma: z.string().optional()
       }).parse(params)
-      validateStrings({ descrizione, corpo })
+      validateStrings({ descrizione: rawDescrizione, corpo: rawCorpo })
+
+      const descrizione = await processText(rawDescrizione)
+      const corpo = await processText(rawCorpo)
 
       await atomicFileOperation(notesPath(), (content, tree) => {
         const lastNum = readNotaCounterFromString(content)
@@ -112,12 +116,14 @@ export function registerNotesWriteTools(): void {
     category: 'base',
     requiredEnrichments: [],
     handler: async (params: unknown): Promise<ToolResult> => {
-      const { id, testo, firma } = z.object({
+      const { id, testo: rawTesto, firma } = z.object({
         id: z.string(),
         testo: z.string(),
         firma: z.string().optional()
       }).parse(params)
-      validateStrings({ testo })
+      validateStrings({ testo: rawTesto })
+
+      const testo = await processText(rawTesto)
 
       await atomicFileOperation(notesPath(), (content, tree) => {
         const block = findNotaBlock(tree, id)

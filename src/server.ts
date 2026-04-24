@@ -18,9 +18,22 @@ export interface ToolRegistration {
   visible: boolean
 }
 
+import type { HodosConfig } from './config/config-file.js'
+
 // Registry dei tool a livello di modulo
 const toolRegistry = new Map<string, ToolRegistration>()
 const activeEnrichments = new Set<string>()
+
+// Configurazione caricata dal file
+let loadedConfig: HodosConfig | null = null
+
+export function getLoadedConfig(): HodosConfig | null {
+  return loadedConfig
+}
+
+export function setLoadedConfig(config: HodosConfig): void {
+  loadedConfig = config
+}
 
 export function registerTool(
   opts: Omit<ToolRegistration, 'visible'>

@@ -4,10 +4,13 @@ import {
   registerTool,
   updateVisibility,
   getVisibleTools,
+  getLoadedConfig,
   type ToolResult
 } from './server.js'
 import { VALID_ENRICHMENTS } from './operations/validate.js'
 import { questioniPath, mastroPath } from './config/paths.js'
+import { getEnabledEnrichments } from './config/config-file.js'
+import { getDirectives } from './enrichments/redazionale/index.js'
 import * as rag from './rag/index.js'
 
 /**
@@ -54,7 +57,7 @@ async function readOperaFingerprint(): Promise<{
 }
 
 const configureSchema = z.object({
-  arricchimenti: z.array(z.string())
+  arricchimenti: z.array(z.string()).optional()
 })
 
 export function registerConfigureTool(): void {
@@ -62,6 +65,8 @@ export function registerConfigureTool(): void {
     name: 'configure',
     description:
       'Configura il server MCP attivando gli arricchimenti specificati. ' +
+      'Se chiamato senza parametri e un file di configurazione è presente, ' +
+      'usa i valori dal file come default. ' +
       'Restituisce la lista dei tool visibili dopo la configurazione.',
     schema: configureSchema,
     category: 'base',
@@ -69,8 +74,19 @@ export function registerConfigureTool(): void {
     handler: async (params: unknown): Promise<ToolResult> => {
       const parsed = configureSchema.parse(params)
 
+      // Se non specificati, usa i default dal file di configurazione
+      let arricchimenti = parsed.arricchimenti
+      if (!arricchimenti || arricchimenti.length === 0) {
+        const config = getLoadedConfig()
+        if (config) {
+          arricchimenti = getEnabledEnrichments(config)
+        } else {
+          arricchimenti = []
+        }
+      }
+
       // Valida gli arricchimenti
-      const invalidi = parsed.arricchimenti.filter(
+      const invalidi = arricchimenti.filter(
         a => !(VALID_ENRICHMENTS as readonly string[]).includes(a)
       )
       if (invalidi.length > 0) {
@@ -85,23 +101,30 @@ export function registerConfigureTool(): void {
       }
 
       // Init RAG se richiesto
-      if (parsed.arricchimenti.includes('rag')) {
+      if (arricchimenti.includes('rag')) {
         await rag.initialize()
       }
 
-      updateVisibility(parsed.arricchimenti)
+      updateVisibility(arricchimenti)
 
       const visibili = getVisibleTools().map(t => t.name)
       const fingerprint = await readOperaFingerprint()
 
       const response: Record<string, unknown> = {
-        arricchimenti_attivi: parsed.arricchimenti,
+        arricchimenti_attivi: arricchimenti,
         tool_visibili: visibili,
         opera_fingerprint: fingerprint
       }
 
-      if (parsed.arricchimenti.includes('rag')) {
+      if (arricchimenti.includes('rag')) {
         response.rag_status = rag.getStatus()
+      }
+
+      if (arricchimenti.includes('redazionale')) {
+        const directives = getDirectives()
+        if (directives) {
+          response.direttive_redazionali = directives
+        }
       }
 
       return {

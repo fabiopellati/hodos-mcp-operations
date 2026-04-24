@@ -5,7 +5,8 @@ export const VALID_STATES = [
 
 export const VALID_ENRICHMENTS = [
   'fasi-p0-p4', 'firma-utente',
-  'compressione-mastro', 'versionamento-git', 'rag'
+  'compressione-mastro', 'versionamento-git', 'rag',
+  'redazionale'
 ] as const
 
 export function validateUtf8(value: string, paramName: string): void {

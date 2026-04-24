@@ -4,6 +4,9 @@ export const operaRoot = process.env.OPERA_ROOT
   || process.env.OPERA_BASE_PATH
   || '/opera'
 
+export const configFilePath = process.env.HODOS_CONFIG_PATH
+  || join(operaRoot, 'hodos-operations.yml')
+
 export const processoDir = process.env.OPERA_PROCESSO_DIR || operaRoot
 export const rfcDir = process.env.OPERA_RFC_DIR || join(processoDir, 'rfc')
 export const documentiDir = process.env.OPERA_DOCUMENTI_DIR || join(operaRoot, 'documenti')

@@ -1,6 +1,6 @@
 {
   "name": "hodos-mcp-operations",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "type": "module",
   "scripts": {
     "build": "tsc",

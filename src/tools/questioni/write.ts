@@ -19,11 +19,10 @@ import {
 import { validateStrings, validateEnum, VALID_STATES } from '../../operations/validate.js'
 import { formatStoriaEntry, formatCommentoHeader } from '../../enrichments/firma.js'
 import { questioniPath, operaRoot } from '../../config/paths.js'
+import { today } from '../../operations/date.js'
 import type { Root } from 'mdast'
 
 const VALID_TYPES = ['rilievo', 'revisione', 'anomalia'] as const
-
-const today = () => new Date().toISOString().slice(0, 10)
 
 function padId(num: number): string {
   return String(num).padStart(3, '0')
@@ -275,12 +274,19 @@ export function registerQuestioniWriteTools(): void {
           )
           if (tableRow) {
             // Sostituisci lo stato nella riga (terza colonna)
-            const oldLine = result.slice(tableRow.lineStart, tableRow.lineEnd - 1)
-            const newLine = oldLine.replace(
+            const fullLine = result.slice(tableRow.lineStart, tableRow.lineEnd)
+            const endsWithNewline = fullLine.endsWith('\n')
+            const line = endsWithNewline ? fullLine.slice(0, -1) : fullLine
+            const updated = line.replace(
               /\|\s*([a-z-]+)\s*\|(\s*)$/,
               `| ${nuovo_stato} |$2`
             )
-            result = replaceRange(result, tableRow.lineStart, tableRow.lineEnd - 1, newLine)
+            result = replaceRange(
+              result,
+              tableRow.lineStart,
+              tableRow.lineEnd,
+              endsWithNewline ? updated + '\n' : updated
+            )
           }
         }
 

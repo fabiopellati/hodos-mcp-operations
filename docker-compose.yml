@@ -5,6 +5,7 @@ services:
       - "${MCP_PORT:-3100}:3100"
     volumes:
       - "${OPERA_PATH:-.}:/opera"
+      - "${HODOS_CONFIG:-./hodos-operations.yml}:/opera/hodos-operations.yml"
     environment:
       - PORT=3100
       - OPERA_ROOT=/opera

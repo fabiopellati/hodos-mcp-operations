@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
+import { processText } from '../../enrichments/redazionale/pipeline.js'
 import { readRaw, replaceRange } from '../../operations/atomic.js'
 import { parseMarkdown } from '../../parser/markdown.js'
 import { findSectionByHeading, getHeadingText } from '../../parser/sections.js'
@@ -163,13 +164,15 @@ export function registerFasiWriteTools(): void {
     category: 'conditional',
     requiredEnrichments: ['fasi-p0-p4'],
     handler: async (params: unknown): Promise<ToolResult> => {
-      const { path: relPath, heading, contenuto } = z.object({
+      const { path: relPath, heading, contenuto: rawContenuto } = z.object({
         path: z.string(),
         heading: z.string(),
         contenuto: z.string()
       }).parse(params)
 
-      validateStrings({ path: relPath, heading, contenuto })
+      validateStrings({ path: relPath, heading, contenuto: rawContenuto })
+
+      const contenuto = await processText(rawContenuto)
 
       const filePath = resolveDocPath(relPath)
       const content = await readRaw(filePath)

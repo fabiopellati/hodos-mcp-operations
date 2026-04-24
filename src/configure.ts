@@ -1,5 +1,9 @@
 import { readFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { z } from 'zod'
+
+const require = createRequire(import.meta.url)
+const { version: SERVER_VERSION } = require('../package.json')
 import {
   registerTool,
   updateVisibility,
@@ -111,6 +115,7 @@ export function registerConfigureTool(): void {
       const fingerprint = await readOperaFingerprint()
 
       const response: Record<string, unknown> = {
+        versione: SERVER_VERSION,
         arricchimenti_attivi: arricchimenti,
         tool_visibili: visibili,
         opera_fingerprint: fingerprint

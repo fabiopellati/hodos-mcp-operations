@@ -185,13 +185,35 @@ Dopo aver configurato il client, riavviare la
 sessione Claude Code perché la connessione MCP
 venga stabilita.
 
+## Versione corrente
+
+La versione corrente dell'arricchimento
+mcp-operations documentata in questo skill è
+**0.5.1**. Il tool `configure` restituisce la
+versione del server nel campo `versione` della
+risposta. Se la versione del server è inferiore a
+quella documentata qui, alcune feature descritte in
+questo documento potrebbero non essere disponibili.
+In tal caso, segnalare all'operatore che il server
+è obsoleto e suggerire l'aggiornamento:
+
+```
+Il server mcp-operations in esecuzione è alla
+versione X.Y.Z, ma la documentazione descrive la
+versione 0.5.1. Alcune feature potrebbero non
+essere disponibili. Per aggiornare:
+
+docker compose pull
+docker compose up -d
+```
+
 ## Primo utilizzo
 
 Alla prima interazione nella sessione, l'agente AI
 deve chiamare il tool `configure` per dichiarare
 gli arricchimenti attivi nell'opera. Il tool
-restituisce il fingerprint dell'opera e abilita i
-tool condizionati.
+restituisce la versione del server, il fingerprint
+dell'opera e abilita i tool condizionati.
 
 Esempio di chiamata:
 

@@ -152,9 +152,14 @@ connessione MCP venga stabilita.
 
 Alla prima interazione, l'agente AI deve chiamare
 il tool `configure` per dichiarare gli arricchimenti
-attivi e ricevere il fingerprint dell'opera. Senza
-questa chiamata i tool condizionati (fasi, RAG) non
-sono disponibili.
+attivi e ricevere la versione del server e il
+fingerprint dell'opera. Senza questa chiamata i tool
+condizionati (fasi, RAG) non sono disponibili.
+
+La risposta di `configure` include un campo
+`versione` che l'agente può confrontare con la
+versione documentata nello skill per rilevare
+server obsoleti.
 
 Per i dettagli operativi sui tool disponibili, le
 variabili d'ambiente e il modulo RAG, consultare lo

@@ -61,7 +61,7 @@ const SEZIONI_PER_DOCUMENTO: Record<string, string[]> = {
   ],
   '6-struttura': [
     'Stack tecnologico',
-    'Componenti',
+    'Parti',
     'Flussi',
     'Decisioni architetturali'
   ],

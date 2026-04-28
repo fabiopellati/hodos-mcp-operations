@@ -168,10 +168,11 @@ async function handleCreateRfc(params: unknown): Promise<ToolResult> {
 
   const qId = extractQId(parsed.questione_id)
   const fileName = `rfc-${qId}-${parsed.slug}.md`
-  const filePath = join(rfcDir, fileName)
+  const dir = rfcDir()
+  const filePath = join(dir, fileName)
 
   try {
-    await mkdir(rfcDir, { recursive: true })
+    await mkdir(dir, { recursive: true })
     const content = buildRfcContent(processed)
     await writeFile(filePath, content, { encoding: 'utf-8', flag: 'wx' })
     return {

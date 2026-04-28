@@ -6,6 +6,13 @@ services:
     volumes:
       - "${OPERA_PATH:-.}:/opera"
       - "${HODOS_CONFIG:-./hodos-operations.yml}:/opera/hodos-operations.yml"
+      - hodos_rag_state:/var/lib/hodos
+      # Esempio di mount paralleli per radici semantiche separate.
+      # Da abilitare se si vuole esporre fasi P0-P4 o RFC da un repo
+      # diverso da quello della governance. Aggiornare anche la
+      # sezione `percorsi:` nel file hodos-operations.yml.
+      # - "${FASI_PATH}:/fasi"
+      # - "${RFC_PATH}:/rfc"
     environment:
       - PORT=3100
       - OPERA_ROOT=/opera
@@ -53,3 +60,4 @@ services:
 volumes:
   qdrant_data:
   redis_data:
+  hodos_rag_state:

@@ -15,12 +15,13 @@ export const readRfcSchema = z.object({
  * Supporta pattern flessibili: rfc-Q{NNN}-*.md, rfc-QUESTIONE-{NNN}-*.md, ecc.
  */
 export async function findRfcFile(questioneId: string): Promise<string> {
+  const dir = rfcDir()
   let files: string[]
   try {
-    files = await readdir(rfcDir)
+    files = await readdir(dir)
   } catch {
     throw new Error(
-      `Directory rfc/ non trovata in ${rfcDir}`
+      `Directory rfc/ non trovata in ${dir}`
     )
   }
 
@@ -53,7 +54,7 @@ export async function findRfcFile(questioneId: string): Promise<string> {
     )
   }
 
-  return join(rfcDir, matching[0])
+  return join(dir, matching[0])
 }
 
 async function handleReadRfc(params: unknown): Promise<ToolResult> {

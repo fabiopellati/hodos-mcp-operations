@@ -6,6 +6,7 @@ import {
   getEnabledEnrichments,
   type HodosConfig
 } from '../../config/config-file.js'
+import { setLoadedPaths } from '../../config/paths.js'
 import { VALID_ENRICHMENTS } from '../../operations/validate.js'
 
 const updateConfigSchema = z.object({
@@ -97,6 +98,7 @@ export function registerConfigTools(): void {
 
       // Aggiorna in memoria
       setLoadedConfig(config)
+      setLoadedPaths(config.percorsi)
 
       // Aggiorna visibilità se necessario
       const enrichments = getEnabledEnrichments(config)

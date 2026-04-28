@@ -300,7 +300,7 @@ venga stabilita.
 
 La versione corrente dell'arricchimento
 mcp-operations documentata in questo skill è
-**0.5.5**. Il tool `configure` restituisce la
+**0.6.0**. Il tool `configure` restituisce la
 versione del server nel campo `versione` della
 risposta. Se la versione del server è inferiore a
 quella documentata qui, alcune feature descritte in
@@ -311,7 +311,7 @@ In tal caso, segnalare all'operatore che il server
 ```
 Il server mcp-operations in esecuzione è alla
 versione X.Y.Z, ma la documentazione descrive la
-versione 0.5.5. Alcune feature potrebbero non
+versione 0.6.0. Alcune feature potrebbero non
 essere disponibili. Per aggiornare:
 
 docker compose pull

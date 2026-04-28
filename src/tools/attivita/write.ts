@@ -14,7 +14,7 @@ const VALID_CONFORMITA = ['conforme', 'parziale', 'non conforme'] as const
 const DATA_REGEX = /^\d{4}-\d{2}-\d{2}$/
 
 function attivitaPath(unita: string): string {
-  return join(documentiDir, 'unita', unita, 'attivita.md')
+  return join(documentiDir(), 'unita', unita, 'attivita.md')
 }
 
 /** Conta le voci BL-N esistenti per determinare il prossimo numero */

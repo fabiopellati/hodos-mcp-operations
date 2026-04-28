@@ -8,8 +8,13 @@ export type EnrichmentConfig = {
   [key: string]: unknown
 }
 
+export const PERCORSI_KEYS = ['governance', 'fasi', 'rfc'] as const
+export type PercorsoKey = typeof PERCORSI_KEYS[number]
+export type PercorsiConfig = Partial<Record<PercorsoKey, string>>
+
 export type HodosConfig = {
   arricchimenti: Record<string, EnrichmentConfig>
+  percorsi?: PercorsiConfig
 }
 
 export async function loadConfigFile(): Promise<HodosConfig | null> {
@@ -35,6 +40,30 @@ export async function loadConfigFile(): Promise<HodosConfig | null> {
         )
         delete config.arricchimenti[name]
       }
+    }
+
+    if (config.percorsi && typeof config.percorsi === 'object') {
+      const validated: PercorsiConfig = {}
+      for (const [key, value] of Object.entries(config.percorsi)) {
+        if (!(PERCORSI_KEYS as readonly string[]).includes(key)) {
+          console.warn(
+            `Configurazione: percorso "${key}" non valido, ignorato. ` +
+            `Valori ammessi: ${PERCORSI_KEYS.join(', ')}`
+          )
+          continue
+        }
+        if (typeof value !== 'string' || value.length === 0) {
+          console.warn(
+            `Configurazione: percorso "${key}" deve essere una stringa ` +
+            `non vuota, ignorato.`
+          )
+          continue
+        }
+        validated[key as PercorsoKey] = value
+      }
+      config.percorsi = validated
+    } else {
+      delete config.percorsi
     }
 
     return config

@@ -3,6 +3,7 @@ import { createServer as createHttpServer } from 'node:http'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { createServer, updateVisibility, setLoadedConfig } from './server.js'
 import { loadConfigFile, getEnabledEnrichments } from './config/config-file.js'
+import { setLoadedPaths } from './config/paths.js'
 
 const port = parseInt(process.env.PORT || '3100', 10)
 
@@ -10,6 +11,7 @@ const port = parseInt(process.env.PORT || '3100', 10)
 const config = await loadConfigFile()
 if (config) {
   setLoadedConfig(config)
+  setLoadedPaths(config.percorsi)
   const enrichments = getEnabledEnrichments(config)
   if (enrichments.length > 0) {
     updateVisibility(enrichments)

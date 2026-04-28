@@ -2,6 +2,11 @@ import { readFile, readdir } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import { parseMarkdown } from '../parser/markdown.js'
 import { getHeadingText } from '../parser/sections.js'
+import {
+  documentiDir,
+  processoDir,
+  rfcDir
+} from '../config/paths.js'
 import type { Root, RootContent } from 'mdast'
 
 export type EntityType =
@@ -22,8 +27,13 @@ function nodeStartOffset(node: RootContent): number {
   return node.position?.start.offset ?? 0
 }
 
-function nodeEndOffset(node: RootContent): number {
-  return node.position?.end.offset ?? 0
+function composeSourceFile(
+  physicalRoot: string,
+  filePath: string,
+  logicalPrefix: string
+): string {
+  const rel = relative(physicalRoot, filePath)
+  return logicalPrefix ? `${logicalPrefix}/${rel}` : rel
 }
 
 /**
@@ -95,12 +105,13 @@ function extractId(headingText: string, type: EntityType): string | null {
 async function parseBlockFile(
   filePath: string,
   type: EntityType,
-  operaRoot: string
+  physicalRoot: string,
+  logicalPrefix: string
 ): Promise<OperaEntity[]> {
   try {
     const content = await readFile(filePath, 'utf-8')
     const tree = parseMarkdown(content)
-    const sourceFile = relative(operaRoot, filePath)
+    const sourceFile = composeSourceFile(physicalRoot, filePath, logicalPrefix)
     return extractH2Blocks(content, tree, type, sourceFile)
   } catch {
     return []
@@ -110,12 +121,13 @@ async function parseBlockFile(
 async function parseWholeFile(
   filePath: string,
   type: EntityType,
-  operaRoot: string,
+  physicalRoot: string,
+  logicalPrefix: string,
   idPrefix: string
 ): Promise<OperaEntity[]> {
   try {
     const content = await readFile(filePath, 'utf-8')
-    const sourceFile = relative(operaRoot, filePath)
+    const sourceFile = composeSourceFile(physicalRoot, filePath, logicalPrefix)
     const baseName = sourceFile
       .replace(/\.md$/, '')
       .replace(/^(rfc|documenti)[/\\]/, '')
@@ -147,27 +159,45 @@ async function collectMdFiles(dir: string): Promise<string[]> {
   return files
 }
 
-export async function parseAllEntities(operaRoot: string): Promise<OperaEntity[]> {
+export async function parseAllEntities(): Promise<OperaEntity[]> {
   const entities: OperaEntity[] = []
 
+  const governanceRoot = processoDir()
   const [questioni, mastro, note] = await Promise.all([
-    parseBlockFile(join(operaRoot, 'questioni.md'), 'questione', operaRoot),
-    parseBlockFile(join(operaRoot, 'mastro.md'), 'mastro-entry', operaRoot),
-    parseBlockFile(join(operaRoot, 'notes.md'), 'nota', operaRoot)
+    parseBlockFile(
+      join(governanceRoot, 'questioni.md'),
+      'questione',
+      governanceRoot,
+      ''
+    ),
+    parseBlockFile(
+      join(governanceRoot, 'mastro.md'),
+      'mastro-entry',
+      governanceRoot,
+      ''
+    ),
+    parseBlockFile(
+      join(governanceRoot, 'notes.md'),
+      'nota',
+      governanceRoot,
+      ''
+    )
   ])
   entities.push(...questioni, ...mastro, ...note)
 
-  const rfcFiles = await collectMdFiles(join(operaRoot, 'rfc'))
+  const rfcRoot = rfcDir()
+  const rfcFiles = await collectMdFiles(rfcRoot)
   const rfcEntities = await Promise.all(
-    rfcFiles.map(f => parseWholeFile(f, 'rfc', operaRoot, 'RFC'))
+    rfcFiles.map(f => parseWholeFile(f, 'rfc', rfcRoot, 'rfc', 'RFC'))
   )
   for (const group of rfcEntities) {
     entities.push(...group)
   }
 
-  const docFiles = await collectMdFiles(join(operaRoot, 'documenti'))
+  const docRoot = documentiDir()
+  const docFiles = await collectMdFiles(docRoot)
   const docEntities = await Promise.all(
-    docFiles.map(f => parseWholeFile(f, 'documento', operaRoot, 'DOC'))
+    docFiles.map(f => parseWholeFile(f, 'documento', docRoot, 'documenti', 'DOC'))
   )
   for (const group of docEntities) {
     entities.push(...group)
@@ -176,29 +206,49 @@ export async function parseAllEntities(operaRoot: string): Promise<OperaEntity[]
   return entities
 }
 
+export interface FileToReparse {
+  /** Path assoluto del file su filesystem. */
+  absolutePath: string
+  /** Path "logico" relativo all'opera (es. "rfc/foo.md", "questioni.md"). */
+  logicalPath: string
+}
+
 /**
- * Estrae entità solo dai file specificati (per sync incrementale).
- * I path sono relativi a operaRoot.
+ * Estrae entità solo dai file specificati (per sync incrementale dopo
+ * confronto con il manifest). Determina il tipo dal logicalPath.
  */
 export async function parseEntitiesFromFiles(
-  operaRoot: string,
-  relativePaths: string[]
+  files: FileToReparse[]
 ): Promise<OperaEntity[]> {
   const entities: OperaEntity[] = []
 
-  for (const rel of relativePaths) {
-    const fullPath = join(operaRoot, rel)
-
-    if (rel === 'questioni.md') {
-      entities.push(...await parseBlockFile(fullPath, 'questione', operaRoot))
-    } else if (rel === 'mastro.md') {
-      entities.push(...await parseBlockFile(fullPath, 'mastro-entry', operaRoot))
-    } else if (rel === 'notes.md') {
-      entities.push(...await parseBlockFile(fullPath, 'nota', operaRoot))
-    } else if (rel.startsWith('rfc/') && rel.endsWith('.md')) {
-      entities.push(...await parseWholeFile(fullPath, 'rfc', operaRoot, 'RFC'))
-    } else if (rel.startsWith('documenti/') && rel.endsWith('.md')) {
-      entities.push(...await parseWholeFile(fullPath, 'documento', operaRoot, 'DOC'))
+  for (const { absolutePath, logicalPath } of files) {
+    if (logicalPath === 'questioni.md') {
+      entities.push(...await parseBlockFile(
+        absolutePath, 'questione', processoDir(), ''
+      ))
+    } else if (logicalPath === 'mastro.md') {
+      entities.push(...await parseBlockFile(
+        absolutePath, 'mastro-entry', processoDir(), ''
+      ))
+    } else if (logicalPath === 'notes.md') {
+      entities.push(...await parseBlockFile(
+        absolutePath, 'nota', processoDir(), ''
+      ))
+    } else if (
+      logicalPath.startsWith('rfc/') &&
+      logicalPath.endsWith('.md')
+    ) {
+      entities.push(...await parseWholeFile(
+        absolutePath, 'rfc', rfcDir(), 'rfc', 'RFC'
+      ))
+    } else if (
+      logicalPath.startsWith('documenti/') &&
+      logicalPath.endsWith('.md')
+    ) {
+      entities.push(...await parseWholeFile(
+        absolutePath, 'documento', documentiDir(), 'documenti', 'DOC'
+      ))
     }
   }
 

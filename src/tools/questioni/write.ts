@@ -1,4 +1,3 @@
-import path from 'node:path'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
 import { processText } from '../../enrichments/redazionale/pipeline.js'
@@ -19,7 +18,7 @@ import {
 } from '../../parser/sections.js'
 import { validateStrings, validateEnum, VALID_STATES } from '../../operations/validate.js'
 import { formatStoriaEntry, formatCommentoHeader } from '../../enrichments/firma.js'
-import { questioniPath, operaRoot } from '../../config/paths.js'
+import { questioniPath, resolveOperaPath } from '../../config/paths.js'
 import { today } from '../../operations/date.js'
 import type { Root } from 'mdast'
 
@@ -733,9 +732,7 @@ export function registerQuestioniWriteTools(): void {
 
       const nota = rawNota ? await processText(rawNota) : undefined
 
-      const fullPath = path.isAbsolute(filePath)
-        ? filePath
-        : path.join(operaRoot, filePath)
+      const fullPath = resolveOperaPath(filePath)
 
       await atomicFileOperation(fullPath, (content, tree) => {
         let result = content
@@ -808,9 +805,7 @@ export function registerQuestioniWriteTools(): void {
 
       const nota = await processText(rawNota)
 
-      const fullPath = path.isAbsolute(filePath)
-        ? filePath
-        : path.join(operaRoot, filePath)
+      const fullPath = resolveOperaPath(filePath)
 
       await atomicFileOperation(fullPath, (content, tree) => {
         let result = content

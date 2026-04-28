@@ -58,7 +58,7 @@ export function registerUnitaWriteTools(): void {
       validateStrings({ nome })
       validateNomeUnita(nome)
 
-      const unitDir = join(documentiDir, 'unita', nome)
+      const unitDir = join(documentiDir(), 'unita', nome)
 
       if (existsSync(unitDir)) {
         return {

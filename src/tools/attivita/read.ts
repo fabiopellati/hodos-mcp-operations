@@ -9,7 +9,7 @@ import { documentiDir } from '../../config/paths.js'
 import type { Root, Heading } from 'mdast'
 
 function attivitaPath(unita: string): string {
-  return join(documentiDir, 'unita', unita, 'attivita.md')
+  return join(documentiDir(), 'unita', unita, 'attivita.md')
 }
 
 /** Offset di inizio di un nodo */

@@ -3,16 +3,26 @@
  * sottosistema RAG. Init lazy, search, stato.
  */
 
-import { operaRoot } from '../config/paths.js'
 import * as embedder from './embedder.js'
 import * as qdrant from './qdrant.js'
-import * as gitSync from './git-sync.js'
-import { parseAllEntities, parseEntitiesFromFiles } from './entities.js'
-import { indexEntities, reindexFile, updateWatermark } from './indexer.js'
+import {
+  parseAllEntities,
+  parseEntitiesFromFiles,
+  type FileToReparse
+} from './entities.js'
+import { indexEntities, removeFile } from './indexer.js'
+import {
+  applyDiffToManifest,
+  buildManifestFromScan,
+  diffScanWithManifest,
+  loadManifest,
+  saveManifest,
+  scanAllRoots
+} from './manifest.js'
 import type { EntityType } from './entities.js'
 
 let available = false
-let indexedCommit: string | null = null
+let indexedFiles = 0
 let entityCount = 0
 
 export function isAvailable(): boolean {
@@ -21,10 +31,10 @@ export function isAvailable(): boolean {
 
 export function getStatus(): {
   available: boolean
-  indexed_commit: string | null
+  indexed_files: number
   entity_count: number
 } {
-  return { available, indexed_commit: indexedCommit, entity_count: entityCount }
+  return { available, indexed_files: indexedFiles, entity_count: entityCount }
 }
 
 export async function initialize(): Promise<void> {
@@ -36,25 +46,20 @@ export async function initialize(): Promise<void> {
     await embedder.init()
     await qdrant.ensureCollection()
 
-    const watermark = await qdrant.readWatermark()
-    const isGit = await gitSync.isGitRepo(operaRoot)
+    const manifest = await loadManifest()
+    const scan = await scanAllRoots()
 
-    if (!isGit) {
+    if (Object.keys(manifest.files).length === 0) {
       await syncComplete()
+      const fresh = buildManifestFromScan(scan)
+      await saveManifest(fresh)
+      indexedFiles = Object.keys(fresh.files).length
     } else {
-      const head = await gitSync.getCurrentHead(operaRoot)
-
-      if (!watermark) {
-        await syncComplete()
-        await updateWatermark(head)
-        indexedCommit = head
-      } else if (watermark !== head) {
-        await syncIncremental(watermark)
-        await updateWatermark(head)
-        indexedCommit = head
-      } else {
-        indexedCommit = watermark
-      }
+      const diff = diffScanWithManifest(scan, manifest)
+      await syncDelta(diff)
+      const updated = applyDiffToManifest(manifest, diff)
+      await saveManifest(updated)
+      indexedFiles = Object.keys(updated.files).length
     }
 
     entityCount = await qdrant.countEntities()
@@ -67,28 +72,31 @@ export async function initialize(): Promise<void> {
 }
 
 async function syncComplete(): Promise<void> {
-  const entities = await parseAllEntities(operaRoot)
+  const entities = await parseAllEntities()
   await indexEntities(entities)
 }
 
-async function syncIncremental(fromCommit: string): Promise<void> {
-  const changedFiles = await gitSync.getChangedFiles(operaRoot, fromCommit)
+async function syncDelta(diff: {
+  added: Array<{ absolutePath: string; logicalPath: string }>
+  modified: Array<{ absolutePath: string; logicalPath: string }>
+  removed: string[]
+}): Promise<void> {
+  const toReparse: FileToReparse[] = [...diff.added, ...diff.modified]
 
-  const relevantFiles = changedFiles.filter(
-    f => f === 'questioni.md'
-      || f === 'mastro.md'
-      || f === 'notes.md'
-      || (f.startsWith('rfc/') && f.endsWith('.md'))
-      || (f.startsWith('documenti/') && f.endsWith('.md'))
-  )
+  if (toReparse.length > 0) {
+    const newEntities = await parseEntitiesFromFiles(toReparse)
+    const sourceFiles = [...new Set(toReparse.map(f => f.logicalPath))]
+    for (const sf of sourceFiles) {
+      const fileEntities = newEntities.filter(e => e.source_file === sf)
+      await removeFile(sf)
+      if (fileEntities.length > 0) {
+        await indexEntities(fileEntities)
+      }
+    }
+  }
 
-  if (relevantFiles.length === 0) return
-
-  const newEntities = await parseEntitiesFromFiles(operaRoot, relevantFiles)
-
-  const sourceFiles = [...new Set(relevantFiles)]
-  for (const sf of sourceFiles) {
-    await reindexFile(sf, newEntities)
+  for (const removedPath of diff.removed) {
+    await removeFile(removedPath)
   }
 }
 

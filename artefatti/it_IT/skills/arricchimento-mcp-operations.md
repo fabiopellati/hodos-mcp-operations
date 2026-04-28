@@ -64,6 +64,47 @@ della directory dell'opera sull'host. Se il file
 `docker-compose.yml` si trova nella stessa directory
 dell'opera, il default (`.`) è sufficiente.
 
+### Architettura multi-radice
+
+Il server espone l'opera al proprio filesystem interno
+come insieme di radici semantiche: governance, fasi,
+RFC. Per default tutte le radici risiedono sotto
+l'unico mount `/opera`, e questo è il setup tipico
+quando l'opera vive in un solo repository. In scenari
+operativi reali può essere utile separare fisicamente
+la documentazione di fase P0-P4 dalla governance, ad
+esempio per renderla disponibile ai team operativi
+direttamente nel repository del codice. In quel caso
+si dichiara un mount parallelo per ciascuna radice
+da separare e si aggiorna la sezione `percorsi` del
+file `hodos-operations.yml` (descritta più avanti).
+
+Esempio di compose con radice fasi separata:
+
+```yaml
+services:
+  hodos-mcp:
+    image: ghcr.io/fabiopellati/hodos-mcp-operations:latest
+    ports:
+      - "${MCP_PORT:-3100}:3100"
+    volumes:
+      - "${OPERA_PATH:-.}:/opera"
+      - "${FASI_PATH}:/fasi"
+      - "./hodos-operations.yml:/opera/hodos-operations.yml"
+      - hodos_rag_state:/var/lib/hodos
+    environment:
+      - PORT=3100
+      - OPERA_ROOT=/opera
+```
+
+Le radici semantiche supportate sono `governance`
+(file di processo: questioni, mastro, notes, RFC nel
+default), `fasi` (sottoalbero `documenti/` per i
+documenti di fase P0-P4) e `rfc` (sottoalbero `rfc/`
+quando si vuole separare le RFC). Le radici non
+dichiarate cadono sotto il mount di radice `/opera`
+con i percorsi convenzionali.
+
 Avvio del server:
 
 ```bash
@@ -87,6 +128,16 @@ curl -s http://localhost:3100/health
 - `HODOS_CONFIG_PATH` — path del file di
   configurazione dentro il container (default:
   `${OPERA_ROOT}/hodos-operations.yml`)
+- `HODOS_RAG_MANIFEST` — path del manifest
+  persistente del modulo RAG (default:
+  `/var/lib/hodos/rag-state.json`). Va montato su
+  un volume nominato per persistere tra riavvii
+- `OPERA_PROCESSO_DIR`, `OPERA_RFC_DIR`,
+  `OPERA_DOCUMENTI_DIR` — override puntuali delle
+  radici semantiche, equivalenti a quanto
+  dichiarato nella sezione `percorsi` del file
+  `hodos-operations.yml`. La configurazione via
+  YAML ha precedenza
 
 ## Configurazione persistente
 
@@ -128,12 +179,29 @@ arricchimenti:
     tabelle-markdown: false
     formato-data: Y-m-d
     formato-ora: H:i
+
+# Sezione opzionale: solo se si separano le radici
+# semantiche con mount paralleli.
+percorsi:
+  governance: /opera
+  fasi: /fasi
+  rfc: /opera/rfc
 ```
 
 Un arricchimento assente dal file equivale a
 `enabled: false`. I parametri specifici di ogni
 arricchimento hanno default sensati; se omessi,
 il server usa i default.
+
+La sezione `percorsi` dichiara la mappa
+«raggruppamento semantico → path interno al
+container». Le chiavi ammesse sono `governance`,
+`fasi`, `rfc`. Una chiave omessa cade sui default
+convenzionali (`governance: /opera`,
+`fasi: /opera/documenti`, `rfc: /opera/rfc`). Quando
+una radice è dichiarata con un path diverso dal
+default, il `docker-compose.yml` deve esporre un
+bind mount corrispondente.
 
 ### Arricchimenti disponibili
 
@@ -232,7 +300,7 @@ venga stabilita.
 
 La versione corrente dell'arricchimento
 mcp-operations documentata in questo skill è
-**0.5.5**. Il tool `configure` restituisce la
+**0.6.0**. Il tool `configure` restituisce la
 versione del server nel campo `versione` della
 risposta. Se la versione del server è inferiore a
 quella documentata qui, alcune feature descritte in
@@ -243,7 +311,7 @@ In tal caso, segnalare all'operatore che il server
 ```
 Il server mcp-operations in esecuzione è alla
 versione X.Y.Z, ma la documentazione descrive la
-versione 0.5.5. Alcune feature potrebbero non
+versione 0.6.0. Alcune feature potrebbero non
 essere disponibili. Per aggiornare:
 
 docker compose pull
@@ -322,6 +390,7 @@ services:
     volumes:
       - "${OPERA_PATH:-.}:/opera"
       - "./hodos-operations.yml:/opera/hodos-operations.yml"
+      - hodos_rag_state:/var/lib/hodos
     environment:
       - PORT=3100
       - OPERA_ROOT=/opera
@@ -351,6 +420,7 @@ services:
 volumes:
   qdrant_data:
   redis_data:
+  hodos_rag_state:
 ```
 
 Avvio con profilo RAG:
@@ -368,10 +438,13 @@ l'arricchimento `rag` nella lista:
 
 Il server si connette a Qdrant, carica il modello
 di embedding multilingua, e sincronizza l'indice con
-lo stato corrente dell'opera. La sync è git-aware:
-al primo avvio indicizza tutto, nelle sessioni
-successive solo i file modificati dall'ultimo commit
-indicizzato.
+lo stato corrente dell'opera. La sync è hash-based:
+all'avvio il server confronta hash e mtime dei file
+sotto le radici semantiche con un manifest
+persistente, e indicizza solo i delta (file aggiunti,
+modificati, rimossi). Al primo avvio, quando il
+manifest è vuoto, viene eseguita un'indicizzazione
+completa.
 
 ### Variabili d'ambiente RAG
 
@@ -386,8 +459,13 @@ indicizzato.
 
 ### Persistenza
 
-I volumi `qdrant_data` e `redis_data` sono managed
-di default. I dati persistono tra riavvii normali
+I volumi `qdrant_data`, `redis_data` e
+`hodos_rag_state` sono managed di default. Il
+volume `hodos_rag_state` ospita il manifest del
+RAG (default: `/var/lib/hodos/rag-state.json`) ed è
+ciò che permette al server di evitare la
+reindicizzazione completa a ogni riavvio. I dati
+persistono tra riavvii normali
 (`docker compose --profile rag down`). Per rimuovere
 i volumi e forzare una reindicizzazione completa:
 

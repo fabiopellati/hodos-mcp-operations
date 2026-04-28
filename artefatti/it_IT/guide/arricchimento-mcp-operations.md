@@ -129,6 +129,19 @@ quella dell'opera, impostare la variabile
 `OPERA_PATH` con il path assoluto dell'opera
 sull'host.
 
+Per default tutta l'opera è esposta al server come
+unico mount sotto `/opera`. È anche possibile
+separare fisicamente la documentazione di fase P0-P4
+o le RFC dal resto della governance, dichiarando
+mount paralleli aggiuntivi e configurando la sezione
+`percorsi` nel file `hodos-operations.yml`. Lo
+scenario tipico è quello in cui i documenti di fase
+risiedono nel repository del codice mentre la
+governance vive in un repository dedicato. Per il
+dettaglio dei mount paralleli e della sezione
+`percorsi` consultare lo skill
+`arricchimento-mcp-operations`.
+
 ### 3. Configurazione del client MCP
 
 Per collegare Claude Code al server, creare il
@@ -226,6 +239,19 @@ arricchimenti non riconosciuti dal server vengono
 ignorati con un warning, senza interrompere
 l'avvio. Questo consente di aggiornare il server
 senza migrare il file di configurazione.
+
+Oltre alla sezione `arricchimenti`, il file può
+contenere una sezione `percorsi` che dichiara dove
+vivono fisicamente le radici semantiche dell'opera
+all'interno del container. Le chiavi ammesse sono
+`governance`, `fasi` e `rfc`; ciascuna corrisponde
+a un raggruppamento di artefatti ed è il punto in
+cui un eventuale mount Docker parallelo deve essere
+agganciato. La sezione è opzionale: se omessa, tutte
+le radici cadono sui sottopercorsi convenzionali del
+mount unico `/opera`. La descrizione di dettaglio
+con esempi di compose è nello skill
+`arricchimento-mcp-operations`.
 
 ---
 

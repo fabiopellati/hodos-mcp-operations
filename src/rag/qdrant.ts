@@ -1,14 +1,12 @@
 /**
- * Client Qdrant con gestione collection e watermark.
- * Import dinamico: la libreria non viene caricata finché
- * init() non è invocato.
+ * Client Qdrant con gestione collection. Import dinamico:
+ * la libreria non viene caricata finché init() non è invocato.
  */
 
 import { EMBEDDING_DIM } from './embedder.js'
 import type { EntityType } from './entities.js'
 
 const COLLECTION_NAME = 'opera_entities'
-const WATERMARK_ID = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
 
 export interface EntityPayload {
   entity_id: string
@@ -96,39 +94,11 @@ export async function search(
   }))
 }
 
-export async function readWatermark(): Promise<string | null> {
-  const c = getClient()
-  try {
-    const points = await c.retrieve(COLLECTION_NAME, {
-      ids: [WATERMARK_ID],
-      with_payload: true
-    })
-    if (points.length > 0 && points[0].payload?.commit) {
-      return points[0].payload.commit as string
-    }
-  } catch {
-    // collection non esiste ancora
-  }
-  return null
-}
-
-export async function writeWatermark(commit: string): Promise<void> {
-  const c = getClient()
-  await c.upsert(COLLECTION_NAME, {
-    points: [{
-      id: WATERMARK_ID,
-      vector: new Array(EMBEDDING_DIM).fill(0),
-      payload: { commit, _type: 'watermark' }
-    }]
-  })
-}
-
 export async function countEntities(): Promise<number> {
   const c = getClient()
   try {
     const info = await c.getCollection(COLLECTION_NAME)
-    const total = info.points_count ?? 0
-    return Math.max(0, total - 1) // escludi watermark
+    return info.points_count ?? 0
   } catch {
     return 0
   }

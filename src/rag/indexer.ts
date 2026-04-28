@@ -1,7 +1,7 @@
 /**
  * Indicizzatore: prende entità, genera embedding e
  * fa upsert in Qdrant a batch. Gestisce pulizia punti
- * obsoleti e watermark.
+ * obsoleti per source_file.
  */
 
 import { createHash } from 'node:crypto'
@@ -9,7 +9,6 @@ import { embed } from './embedder.js'
 import {
   upsertPoints,
   deletePoints,
-  writeWatermark,
   getPointIdsBySourceFile
 } from './qdrant.js'
 import type { OperaEntity } from './entities.js'
@@ -20,7 +19,6 @@ function entityPointId(entity: OperaEntity): string {
   const hash = createHash('sha256')
     .update(`${entity.type}:${entity.id}:${entity.source_file}`)
     .digest('hex')
-  // UUID v4-like dalla prima parte dell'hash
   return [
     hash.slice(0, 8),
     hash.slice(8, 12),
@@ -67,24 +65,9 @@ export async function indexEntities(
 }
 
 /**
- * Rimuove tutti i punti relativi a un file sorgente
- * e reindicizza le nuove entità estratte da quel file.
+ * Rimuove tutti i punti relativi a un file sorgente.
  */
-export async function reindexFile(
-  sourceFile: string,
-  newEntities: OperaEntity[]
-): Promise<void> {
-  const oldIds = await getPointIdsBySourceFile(sourceFile)
-  await deletePoints(oldIds)
-
-  const fileEntities = newEntities.filter(
-    e => e.source_file === sourceFile
-  )
-  if (fileEntities.length > 0) {
-    await indexEntities(fileEntities)
-  }
-}
-
-export async function updateWatermark(commit: string): Promise<void> {
-  await writeWatermark(commit)
+export async function removeFile(sourceFile: string): Promise<void> {
+  const ids = await getPointIdsBySourceFile(sourceFile)
+  await deletePoints(ids)
 }

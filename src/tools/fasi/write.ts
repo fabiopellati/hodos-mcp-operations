@@ -121,7 +121,7 @@ export function registerFasiWriteTools(): void {
         }
       }
 
-      const dir = join(documentiDir, FASE_DIRS[fase])
+      const dir = join(documentiDir(), FASE_DIRS[fase])
       const filePath = join(dir, `${numero_nome}.md`)
 
       if (existsSync(filePath)) {

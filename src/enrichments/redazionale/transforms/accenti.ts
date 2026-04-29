@@ -45,6 +45,18 @@ export function fixAccenti(text: string): string {
     return `\x00INLINE${inlines.length - 1}\x00`
   })
 
+  // Proteggi stringhe quotate con apici singoli usati come delimitatori
+  // (apice non preceduto da lettera, apice non seguito da lettera):
+  // evita che l'apice di chiusura venga consumato come apostrofo finale
+  const singleQuoted: string[] = []
+  result = result.replace(
+    /(?<![a-zA-ZÀ-ÿ])'([^'\n]+)'(?![a-zA-ZÀ-ÿ])/g,
+    (match) => {
+      singleQuoted.push(match)
+      return `\x00SQUOTE${singleQuoted.length - 1}\x00`
+    }
+  )
+
   // Proteggi apocopi
   const apocopi: string[] = []
   result = result.replace(APOCOPI, (match) => {
@@ -62,6 +74,9 @@ export function fixAccenti(text: string): string {
 
   // Ripristina apocopi
   result = result.replace(/\x00APOCOPE(\d+)\x00/g, (_, i) => apocopi[parseInt(i)])
+
+  // Ripristina stringhe quotate con apici singoli
+  result = result.replace(/\x00SQUOTE(\d+)\x00/g, (_, i) => singleQuoted[parseInt(i)])
 
   // Ripristina inline code
   result = result.replace(/\x00INLINE(\d+)\x00/g, (_, i) => inlines[parseInt(i)])

@@ -21,11 +21,14 @@ export function findNotaBlock(
     if (node.type !== 'heading' || node.depth !== 2) continue
     if (!getHeadingText(node).includes(id)) continue
 
+    // A-05: il blocco nota termina al prossimo heading H1/H2, non al
+    // primo thematicBreak. Il --- interno al corpo non deve troncare
+    // il blocco; l'inserimento dei commenti trova il --- finale
+    // cercando nell'AST l'ultimo thematicBreak del blocco.
     let endIndex = children.length
     for (let j = i + 1; j < children.length; j++) {
       const sibling = children[j]
-      if ((sibling.type === 'heading' && sibling.depth <= 2) ||
-          sibling.type === 'thematicBreak') {
+      if (sibling.type === 'heading' && sibling.depth <= 2) {
         endIndex = j
         break
       }

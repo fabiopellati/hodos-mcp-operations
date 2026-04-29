@@ -28,6 +28,15 @@ function padId(num: number): string {
   return String(num).padStart(3, '0')
 }
 
+// A-04: formatta un item di lista con indent di 2 spazi sulle
+// continuation lines, evitando righe vuote tra item contigui.
+function formatListItem(prefix: string, text: string): string {
+  const lines = text.trim().split('\n')
+  if (lines.length <= 1) return `${prefix}${lines[0]}\n`
+  const [first, ...rest] = lines
+  return `${prefix}${first}\n${rest.map(l => `  ${l}`).join('\n')}\n`
+}
+
 /**
  * Legge il contatore "Ultima questione inserita" dal blockquote nella stringa.
  * Restituisce 0 se il contatore indica "---" o non e' presente.
@@ -216,14 +225,14 @@ export function registerQuestioniWriteTools(): void {
         if (domande_aperte && domande_aperte.length > 0) {
           body += `**Domande aperte**\n\n`
           for (const d of domande_aperte) {
-            body += `- [ ] ${d}\n`
+            body += formatListItem('- [ ] ', d)
           }
           body += `\n`
         }
         if (impatto && impatto.length > 0) {
           body += `**Impatto**\n\n`
           for (const imp of impatto) {
-            body += `- ${imp.artefatto} — ${imp.descrizione}\n`
+            body += formatListItem(`- ${imp.artefatto} — `, imp.descrizione)
           }
           body += `\n`
         }
@@ -740,30 +749,39 @@ export function registerQuestioniWriteTools(): void {
           content, tree, sezione, id
         )
 
-        // Trova tutte le righe checkbox nel range
+        // A-01: trova l'item all'indice specificato e include le
+        // continuation lines (indent 2 spazi) nell'aggiornamento.
         let count = 0
         const slice = result.slice(searchStart, searchEnd)
         const lines = slice.split('\n')
         let offset = searchStart
-        for (const line of lines) {
+
+        for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+          const line = lines[lineIdx]
           const m = line.match(/^- \[[ x]\] /)
           if (m) {
             count++
             if (count === indice) {
-              const checkboxMatch = line.match(/^- \[ \] /)
-              if (!checkboxMatch) {
+              if (!line.match(/^- \[ \] /)) {
                 return result
               }
               const lineStart = offset
-              const lineEnd = offset + line.length
-              let newLine = line.replace('- [ ] ', '- [x] ')
-              if (nota) {
-                newLine += ` — ${nota}`
+              // Estendi il range alle continuation lines dell'item
+              let logicalEnd = offset + line.length
+              let nextIdx = lineIdx + 1
+              while (nextIdx < lines.length && lines[nextIdx].startsWith('  ')) {
+                logicalEnd += lines[nextIdx].length + 1
+                nextIdx++
               }
-              result = replaceRange(result, lineStart, lineEnd, newLine)
+              const itemContent = result.slice(lineStart, logicalEnd)
+              let newContent = itemContent.replace(/^- \[ \] /, '- [x] ')
+              if (nota) {
+                newContent = newContent.trimEnd() + ` — ${nota}`
+              }
+              result = replaceRange(result, lineStart, logicalEnd, newContent)
               return result
             }
-          } else if (line.trim() !== '' && !line.match(/^- /)) {
+          } else if (line.trim() !== '' && !line.startsWith('  ')) {
             break
           }
           offset += line.length + 1
@@ -813,20 +831,30 @@ export function registerQuestioniWriteTools(): void {
           content, tree, sezione, id
         )
 
-        // Trova la riga alla posizione indice nel range
+        // A-01: trova l'item all'indice specificato e include le
+        // continuation lines (indent 2 spazi) nell'aggiornamento.
         let count = 0
         const slice = result.slice(searchStart, searchEnd)
         const lines = slice.split('\n')
         let offset = searchStart
-        for (const line of lines) {
+
+        for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+          const line = lines[lineIdx]
           const m = line.match(/^- /)
           if (m) {
             count++
             if (count === indice) {
               const lineStart = offset
-              const lineEnd = offset + line.length
-              const newLine = `${line} — ${nota}`
-              result = replaceRange(result, lineStart, lineEnd, newLine)
+              // Estendi il range alle continuation lines dell'item
+              let logicalEnd = offset + line.length
+              let nextIdx = lineIdx + 1
+              while (nextIdx < lines.length && lines[nextIdx].startsWith('  ')) {
+                logicalEnd += lines[nextIdx].length + 1
+                nextIdx++
+              }
+              const itemContent = result.slice(lineStart, logicalEnd)
+              const newContent = itemContent.trimEnd() + ` — ${nota}`
+              result = replaceRange(result, lineStart, logicalEnd, newContent)
               return result
             }
           } else if (line.trim() !== '' && !line.startsWith('  ')) {

@@ -300,7 +300,7 @@ venga stabilita.
 
 La versione corrente dell'arricchimento
 mcp-operations documentata in questo skill è
-**0.6.0**. Il tool `configure` restituisce la
+**0.6.1**. Il tool `configure` restituisce la
 versione del server nel campo `versione` della
 risposta. Se la versione del server è inferiore a
 quella documentata qui, alcune feature descritte in
@@ -484,30 +484,42 @@ esplicita, i volumi possono essere dichiarati come
 - `configure` — configura arricchimenti attivi,
   restituisce fingerprint dell'opera
 - `read_questione` — legge una questione per ID
+- `read_questioni_index` — legge la tabella indice
+  di questioni.md
 - `list_questioni` — elenca questioni con filtro
   per stato
-- `open_questione` — apre una nuova questione
-- `update_questione_stato` — aggiorna stato di una
+- `create_questione` — apre una nuova questione
+- `update_stato` — aggiorna lo stato di una
   questione
-- `add_domanda` — aggiunge domanda aperta a una
+- `add_domanda_aperta` — aggiunge una domanda aperta
+  a una questione
+- `add_impatto` — aggiunge una voce alla sezione
+  Impatto di una questione
+- `add_collegate` — aggiunge o aggiorna il campo
+  Questioni collegate
+- `check_item` — spunta un checkbox in una sezione
+  di un file markdown
+- `annotate_item` — aggiunge un'annotazione inline
+  a un elemento di lista
+- `add_commento` — aggiunge un commento a una
   questione
-- `check_item` — spunta un item (domanda o checkbox)
-- `annotate_item` — annota un item con risposta
-- `add_commento` — aggiunge commento a una questione
+- `remove_questione` — rimuove una questione senza
+  creare entry nel mastro (solo per correzioni)
 - `close_questione` — chiusura atomica cross-file
   (mastro + rimozione da questioni)
-- `read_mastro` — legge il mastro completo o una
-  entry per ID
-- `write_mastro_entry` — scrive una nuova entry nel
-  mastro
-- `read_notes` — legge le note
-- `write_nota` — aggiunge una nota
+- `read_entry` — legge una entry del mastro per ID
+- `read_entries` — legge tutte le entry del mastro
+- `read_notes_index` — legge la tabella indice di
+  notes.md
+- `read_nota` — legge una nota per ID
+- `create_nota` — crea una nuova nota
+- `add_commento_nota` — aggiunge un commento a una
+  nota
 - `read_rfc` — legge una RFC per nome file
-- `list_rfc` — elenca le RFC presenti
 - `create_rfc` — crea una nuova RFC
-- `update_rfc_sezione` — aggiorna una sezione della
-  RFC
-- `write_rfc_response` — compila la sezione Response
+- `update_rfc` — aggiorna una sezione di una RFC
+- `write_response_rfc` — compila la sezione Response
+  di una RFC
 
 - `update_config` — modifica il file di configurazione
   hodos-operations.yml. Accetta un path puntato e un
@@ -583,14 +595,22 @@ Esempio di utilizzo:
 ### Tool condizionati (arricchimento fasi-p0-p4)
 
 - `read_documento` — legge un documento di fase
-- `write_documento` — crea o aggiorna un documento
+- `create_documento_fase` — crea un nuovo documento
+  di fase
+- `write_sezione` — crea o aggiorna una sezione di
+  un documento di fase
+- `read_sezione` — legge una sezione di un documento
   di fase
 - `create_unita` — crea la struttura di una nuova
   unità P2
-- `read_attivita` — legge le voci di attività di
-  una unità
-- `write_attivita` — aggiunge o aggiorna una voce
-  di attività
+- `read_voce_attivita` — legge una voce di attività
+  per ID
+- `list_voci_attivita` — elenca le voci di attività
+  di una unità
+- `create_voce_attivita` — crea una nuova voce di
+  attività
+- `close_voce_attivita` — chiude una voce di
+  attività
 
 ### Tool condizionati (arricchimento rag)
 

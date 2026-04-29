@@ -137,19 +137,29 @@ export function registerNotesWriteTools(): void {
 
         const commentBody = `\n${formatCommentoHeader(commentId, date, firma)}\n${testo}\n\n`
 
+        // A-05: trova l'ultimo thematicBreak nel blocco nota per inserire
+        // il commento prima di esso (in fondo al corpo, dopo le sezioni interne).
+        const children = tree.children
+        let lastHrOffset: number | null = null
+        for (let i = block.startIndex + 1; i < block.endIndex; i++) {
+          if (children[i].type === 'thematicBreak') {
+            lastHrOffset = children[i].position?.start.offset ?? null
+          }
+        }
+        const insertOffset = lastHrOffset !== null ? lastHrOffset : block.endOffset
+
         // Verifica se esiste già la sezione Commenti nel blocco
         const commentiLine = findLineByPatternInRange(
-          content, /^\*\*Commenti\*\*/, block.startOffset, block.endOffset
+          content, /^### Commenti/, block.startOffset, insertOffset
         )
 
         if (commentiLine) {
-          // Inserisci il commento prima della fine del blocco
-          return insertAt(content, block.endOffset, commentBody)
+          return insertAt(content, insertOffset, commentBody)
         }
 
-        // Se la sezione Commenti non esiste, creala prima della fine del blocco
-        const sectionBlock = `\n**Commenti**\n${commentBody}`
-        return insertAt(content, block.endOffset, sectionBlock)
+        // A-05: usa ### Commenti (sezione di secondo livello relativa alla nota H2)
+        const sectionBlock = `\n### Commenti\n${commentBody}`
+        return insertAt(content, insertOffset, sectionBlock)
       })
 
       return {

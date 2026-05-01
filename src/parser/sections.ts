@@ -1,4 +1,4 @@
-import type { Root, Heading, Table, RootContent } from 'mdast'
+import type { Root, Heading, Table, List, RootContent } from 'mdast'
 import { toString } from 'mdast-util-to-string'
 
 export function getHeadingText(node: Heading): string {
@@ -111,7 +111,7 @@ export function findBlockByHeadingId(
   return null
 }
 
-// --- Tabella indice ---
+// --- Tabella indice (deprecata: sostituita da ListInfo) ---
 
 export interface TableInfo {
   nodeIndex: number
@@ -133,6 +133,44 @@ export function findIndexTable(tree: Root): TableInfo | null {
     }
   }
   return null
+}
+
+// --- Elenco indice ---
+
+export interface ListInfo {
+  nodeIndex: number
+  list: List
+  startOffset: number
+  endOffset: number
+}
+
+export function findIndexList(tree: Root): ListInfo | null {
+  for (let i = 0; i < tree.children.length; i++) {
+    const node = tree.children[i]
+    if (node.type === 'list') {
+      return {
+        nodeIndex: i,
+        list: node,
+        startOffset: nodeStart(node),
+        endOffset: nodeEnd(node)
+      }
+    }
+  }
+  return null
+}
+
+/**
+ * Restituisce l'offset per inserire un nuovo item in cima
+ * all'elenco indice e un flag che indica se serve un \n prima
+ * (quando l'elenco è vuoto).
+ */
+export function findFirstListItemOffset(
+  listInfo: ListInfo
+): { offset: number; needsNewline: boolean } {
+  if (listInfo.list.children.length > 0) {
+    return { offset: nodeStart(listInfo.list.children[0]), needsNewline: false }
+  }
+  return { offset: listInfo.endOffset, needsNewline: true }
 }
 
 // --- Posizioni di inserimento (restituiscono offset) ---
@@ -177,16 +215,18 @@ export function findAfterTitleOffset(tree: Root): number {
  * (per i file con indice: posizione dopo il --- separatore).
  */
 export function findAfterIndexSeparatorOffset(tree: Root): number {
-  const tableInfo = findIndexTable(tree)
-  if (!tableInfo) return tree.position?.end.offset ?? 0
+  const listInfo = findIndexList(tree)
+  const startNodeIndex = listInfo?.nodeIndex ?? null
+
+  if (startNodeIndex === null) return tree.position?.end.offset ?? 0
 
   const children = tree.children
-  for (let i = tableInfo.nodeIndex + 1; i < children.length; i++) {
+  for (let i = startNodeIndex + 1; i < children.length; i++) {
     if (children[i].type === 'thematicBreak') {
       return nodeEnd(children[i])
     }
   }
-  return nodeEnd(children[tableInfo.nodeIndex])
+  return nodeEnd(children[startNodeIndex])
 }
 
 // --- Ricerca testo in blocchi ---

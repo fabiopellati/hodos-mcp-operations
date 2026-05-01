@@ -4,8 +4,8 @@ import { processText } from '../../enrichments/redazionale/pipeline.js'
 import { atomicFileOperation, insertAt, replaceRange } from '../../operations/atomic.js'
 import { parseMarkdown } from '../../parser/markdown.js'
 import {
-  findIndexTable,
-  findFirstDataRowOffset,
+  findIndexList,
+  findFirstListItemOffset,
   findBodyInsertOffset,
   findLineByPattern,
   findLineByPatternInRange,
@@ -74,11 +74,11 @@ export function registerNotesWriteTools(): void {
 
         let result = content
 
-        // 1. Inserisci riga nell'indice (in cima, dopo l'header)
-        const indexResult = findIndexTable(tree)
+        // 1. Inserisci riga nell'indice (in cima all'elenco)
+        const indexResult = findIndexList(tree)
         if (indexResult) {
-          const { offset: rowOffset, needsNewline } = findFirstDataRowOffset(indexResult.table)
-          const newRow = `${needsNewline ? '\n' : ''}| ${id} | ${descrizione} | ${date} |\n`
+          const { offset: rowOffset, needsNewline } = findFirstListItemOffset(indexResult)
+          const newRow = `${needsNewline ? '\n' : ''}- **${id}** — ${descrizione} — ${date}\n`
           result = insertAt(result, rowOffset, newRow)
 
           // Ri-parsa dopo l'inserimento per offset corretti

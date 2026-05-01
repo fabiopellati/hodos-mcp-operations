@@ -16,6 +16,23 @@ function restoreTableLines(text: string, lines: string[]): string {
   return text.replace(/XTABLE(\d+)XEND/g, (_, idx) => lines[parseInt(idx)])
 }
 
+// Proteggi le righe di indice a elenco puntato prima del wrap pandoc.
+// Le righe dell'indice Hodos (- **ID-NNN** — ...) devono restare su una
+// singola riga fisica indipendentemente dalla loro lunghezza.
+function protectIndexListLines(text: string): { guarded: string; lines: string[] } {
+  const lines: string[] = []
+  const guarded = text.replace(/^(- \*\*[A-Z]+-\d+\*\* — [^\n]*)$/gm, (match) => {
+    const idx = lines.length
+    lines.push(match)
+    return `XLIST${idx}XEND`
+  })
+  return { guarded, lines }
+}
+
+function restoreIndexListLines(text: string, lines: string[]): string {
+  return text.replace(/XLIST(\d+)XEND/g, (_, idx) => lines[parseInt(idx)])
+}
+
 // A-06: rimuovi escape non necessari prodotti da pandoc commonmark_x.
 // Pandoc escapa caratteri ASCII non significativi in contesto testuale.
 function removeUnnecessaryEscapes(text: string): string {
@@ -31,7 +48,8 @@ export function pandocNormalize(
   columns: number = 80
 ): Promise<string> {
   return new Promise((resolve) => {
-    const { guarded: guardedText, lines: tableLines } = protectTableLines(text)
+    const { guarded: afterTable, lines: tableLines } = protectTableLines(text)
+    const { guarded: guardedText, lines: listLines } = protectIndexListLines(afterTable)
 
     const proc = spawn('pandoc', [
       '--wrap=auto',
@@ -52,7 +70,8 @@ export function pandocNormalize(
         resolve(text)
         return
       }
-      const restored = restoreTableLines(stdout, tableLines)
+      const afterRestoreTable = restoreTableLines(stdout, tableLines)
+      const restored = restoreIndexListLines(afterRestoreTable, listLines)
       resolve(removeUnnecessaryEscapes(restored))
     })
 

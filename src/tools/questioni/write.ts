@@ -8,9 +8,9 @@ import {
 } from '../../operations/atomic.js'
 import { parseMarkdown } from '../../parser/markdown.js'
 import {
-  findIndexTable,
+  findIndexList,
+  findFirstListItemOffset,
   findBodyInsertOffset,
-  findFirstDataRowOffset,
   findLineByPattern,
   findLineByPatternInRange,
   findLastLineByPatternInRange,
@@ -199,11 +199,11 @@ export function registerQuestioniWriteTools(): void {
 
         let result = content
 
-        // 1. Inserisci riga nell'indice (in cima, dopo l'header)
-        const indexInfo = findIndexTable(tree)
+        // 1. Inserisci riga nell'indice (in cima all'elenco)
+        const indexInfo = findIndexList(tree)
         if (indexInfo) {
-          const { offset: rowOffset, needsNewline } = findFirstDataRowOffset(indexInfo.table)
-          const newRow = `${needsNewline ? '\n' : ''}| ${id} | ${titolo} | open |\n`
+          const { offset: rowOffset, needsNewline } = findFirstListItemOffset(indexInfo)
+          const newRow = `${needsNewline ? '\n' : ''}- **${id}** — ${titolo} — open\n`
           result = insertAt(result, rowOffset, newRow)
           // Dopo l'inserimento, tutti gli offset successivi sono spostati
           // di newRow.length. Ricalcoliamo l'AST per le operazioni successive.
@@ -287,28 +287,24 @@ export function registerQuestioniWriteTools(): void {
         const date = today()
         let result = content
 
-        // 1. Aggiorna riga indice: trova la riga con l'ID nella tabella
-        const indexInfo = findIndexTable(tree)
+        // 1. Aggiorna riga indice: trova la riga con l'ID nell'elenco
+        const indexInfo = findIndexList(tree)
         if (indexInfo) {
-          const tableRow = findLineByPatternInRange(
+          const listRow = findLineByPatternInRange(
             result,
-            new RegExp(`\\|\\s*${id}\\s*\\|`),
+            new RegExp(`^- \\*\\*${id}\\*\\*`),
             indexInfo.startOffset,
             indexInfo.endOffset
           )
-          if (tableRow) {
-            // Sostituisci lo stato nella riga (terza colonna)
-            const fullLine = result.slice(tableRow.lineStart, tableRow.lineEnd)
+          if (listRow) {
+            const fullLine = result.slice(listRow.lineStart, listRow.lineEnd)
             const endsWithNewline = fullLine.endsWith('\n')
             const line = endsWithNewline ? fullLine.slice(0, -1) : fullLine
-            const updated = line.replace(
-              /\|\s*([a-z-]+)\s*\|(\s*)$/,
-              `| ${nuovo_stato} |$2`
-            )
+            const updated = line.replace(/ — [a-z-]+$/, ` — ${nuovo_stato}`)
             result = replaceRange(
               result,
-              tableRow.lineStart,
-              tableRow.lineEnd,
+              listRow.lineStart,
+              listRow.lineEnd,
               endsWithNewline ? updated + '\n' : updated
             )
           }
@@ -676,16 +672,16 @@ export function registerQuestioniWriteTools(): void {
         let result = content
 
         // 1. Rimuovi riga dall'indice
-        const indexInfo = findIndexTable(tree)
+        const indexInfo = findIndexList(tree)
         if (indexInfo) {
-          const tableRow = findLineByPatternInRange(
+          const listRow = findLineByPatternInRange(
             result,
-            new RegExp(`\\|\\s*${id}\\s*\\|`),
+            new RegExp(`^- \\*\\*${id}\\*\\*`),
             indexInfo.startOffset,
             indexInfo.endOffset
           )
-          if (tableRow) {
-            result = replaceRange(result, tableRow.lineStart, tableRow.lineEnd, '')
+          if (listRow) {
+            result = replaceRange(result, listRow.lineStart, listRow.lineEnd, '')
           }
         }
 

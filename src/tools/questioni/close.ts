@@ -4,7 +4,7 @@ import { registerTool, type ToolResult } from '../../server.js'
 import { processText } from '../../enrichments/redazionale/pipeline.js'
 import { parseMarkdown } from '../../parser/markdown.js'
 import {
-  findIndexTable,
+  findIndexList,
   findBlockByHeadingId,
   findLineByPatternInRange,
   findAfterTitleOffset
@@ -173,19 +173,19 @@ export function registerCloseQuestioneTools(): void {
       // 2b. Prepara rimozione da questioni.md
       let questioniResult = questioniContent
 
-      const indexInfo = findIndexTable(questioniTree)
+      const indexInfo = findIndexList(questioniTree)
       if (indexInfo) {
-        const tableRow = findLineByPatternInRange(
+        const listRow = findLineByPatternInRange(
           questioniResult,
-          new RegExp(`\\|\\s*${parsed.id}\\s*\\|`),
+          new RegExp(`^- \\*\\*${parsed.id}\\*\\*`),
           indexInfo.startOffset,
           indexInfo.endOffset
         )
-        if (tableRow) {
+        if (listRow) {
           questioniResult = replaceRange(
             questioniResult,
-            tableRow.lineStart,
-            tableRow.lineEnd,
+            listRow.lineStart,
+            listRow.lineEnd,
             ''
           )
         }

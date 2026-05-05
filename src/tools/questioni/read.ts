@@ -3,9 +3,8 @@ import { registerTool, type ToolResult } from '../../server.js'
 import { readRaw } from '../../operations/atomic.js'
 import { parseMarkdown } from '../../parser/markdown.js'
 import {
-  findIndexTable,
+  findIndexList,
   findBlockByHeadingId,
-  findLineByPatternInRange,
   type BlockRange
 } from '../../parser/sections.js'
 import { validateEnum, VALID_STATES } from '../../operations/validate.js'
@@ -29,17 +28,17 @@ export function registerQuestioniReadTools(): void {
   registerTool({
     name: 'read_questioni_index',
     description:
-      'Restituisce la tabella indice di questioni.md serializzata in markdown.',
+      'Restituisce l\'elenco indice di questioni.md serializzato in markdown.',
     schema: z.object({}),
     category: 'base',
     requiredEnrichments: [],
     handler: async (): Promise<ToolResult> => {
       const content = await readRaw(questioniPath())
       const tree = parseMarkdown(content)
-      const result = findIndexTable(tree)
+      const result = findIndexList(tree)
       if (!result) {
         return {
-          content: [{ type: 'text', text: 'Tabella indice non trovata.' }],
+          content: [{ type: 'text', text: 'Indice non trovato.' }],
           isError: true
         }
       }
@@ -94,37 +93,33 @@ export function registerQuestioniReadTools(): void {
 
       const content = await readRaw(questioniPath())
       const tree = parseMarkdown(content)
-      const result = findIndexTable(tree)
+      const result = findIndexList(tree)
       if (!result) {
         return {
-          content: [{ type: 'text', text: 'Tabella indice non trovata.' }],
+          content: [{ type: 'text', text: 'Indice non trovato.' }],
           isError: true
         }
       }
 
+      const listSlice = content.slice(result.startOffset, result.endOffset)
+
       if (!stato) {
         return {
-          content: [{
-            type: 'text',
-            text: content.slice(result.startOffset, result.endOffset)
-          }]
+          content: [{ type: 'text', text: listSlice }]
         }
       }
 
-      // Filtra per stato: estrai header + righe che matchano
-      const tableSlice = content.slice(result.startOffset, result.endOffset)
-      const lines = tableSlice.split('\n')
-      // lines[0] = header, lines[1] = separator (---|---|---), lines[2..] = data rows
-      const filtered = lines.filter((line, i) => {
-        if (i <= 1) return true // header + separator
-        if (line.trim() === '') return false
-        // La terza colonna contiene lo stato
-        const cells = line.split('|').map(c => c.trim()).filter(c => c !== '')
-        return cells.length >= 3 && cells[2] === stato
-      })
+      // Filtra per stato: ogni riga ha formato `- **ID** — Titolo — stato`
+      const filtered = listSlice
+        .split('\n')
+        .filter(line => {
+          if (!line.startsWith('- ')) return false
+          return line.match(new RegExp(` — ${stato}$`)) !== null
+        })
+        .join('\n')
 
       return {
-        content: [{ type: 'text', text: filtered.join('\n') }]
+        content: [{ type: 'text', text: filtered }]
       }
     }
   })

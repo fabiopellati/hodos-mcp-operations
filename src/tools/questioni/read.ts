@@ -4,6 +4,7 @@ import { readRaw } from '../../operations/atomic.js'
 import { parseMarkdown } from '../../parser/markdown.js'
 import {
   findIndexList,
+  findIndexTable,
   findBlockByHeadingId,
   type BlockRange
 } from '../../parser/sections.js'
@@ -24,6 +25,33 @@ function findQuestioneBlock(
 
 export { findQuestioneBlock }
 
+/**
+ * Costruisce l'errore da restituire quando findIndexList non trova
+ * un elenco indice. Se il documento contiene un indice nel vecchio
+ * formato a tabella, l'errore documenta il cambio di formato e indica
+ * l'intervento richiesto dal protocollo Hodos.
+ */
+function buildIndexNotFoundError(tree: import('mdast').Root): ToolResult {
+  if (findIndexTable(tree)) {
+    return {
+      content: [{
+        type: 'text',
+        text:
+          'Indice in formato tabella rilevato. ' +
+          'Il protocollo Hodos richiede il formato a elenco puntato: ' +
+          'ogni riga deve avere la forma `- **ID** — Titolo — stato`. ' +
+          'Aggiornare la sezione "## Indice" di questioni.md al nuovo ' +
+          'formato prima di utilizzare i tool di lettura.'
+      }],
+      isError: true
+    }
+  }
+  return {
+    content: [{ type: 'text', text: 'Indice non trovato.' }],
+    isError: true
+  }
+}
+
 export function registerQuestioniReadTools(): void {
   registerTool({
     name: 'read_questioni_index',
@@ -36,12 +64,7 @@ export function registerQuestioniReadTools(): void {
       const content = await readRaw(questioniPath())
       const tree = parseMarkdown(content)
       const result = findIndexList(tree)
-      if (!result) {
-        return {
-          content: [{ type: 'text', text: 'Indice non trovato.' }],
-          isError: true
-        }
-      }
+      if (!result) return buildIndexNotFoundError(tree)
       return {
         content: [{
           type: 'text',
@@ -94,12 +117,7 @@ export function registerQuestioniReadTools(): void {
       const content = await readRaw(questioniPath())
       const tree = parseMarkdown(content)
       const result = findIndexList(tree)
-      if (!result) {
-        return {
-          content: [{ type: 'text', text: 'Indice non trovato.' }],
-          isError: true
-        }
-      }
+      if (!result) return buildIndexNotFoundError(tree)
 
       const listSlice = content.slice(result.startOffset, result.endOffset)
 

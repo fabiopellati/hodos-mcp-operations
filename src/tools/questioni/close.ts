@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { readFile, writeFile } from 'node:fs/promises'
 import { registerTool, type ToolResult } from '../../server.js'
-import { processText } from '../../enrichments/redazionale/pipeline.js'
+import { processText, processTitolo } from '../../enrichments/redazionale/pipeline.js'
 import { parseMarkdown } from '../../parser/markdown.js'
 import {
   findIndexList,
@@ -70,7 +70,7 @@ export function registerCloseQuestioneTools(): void {
       })
 
       // Elaborazione redazionale dei campi di testo libero
-      const titolo = await processText(parsed.titolo)
+      const titolo = await processTitolo(parsed.titolo)
       const percorso = parsed.percorso
         ? await processText(parsed.percorso)
         : undefined

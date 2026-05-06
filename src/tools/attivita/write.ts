@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import { writeFile } from 'node:fs/promises'
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
-import { processText } from '../../enrichments/redazionale/pipeline.js'
+import { processText, processTitolo } from '../../enrichments/redazionale/pipeline.js'
 import { readRaw, insertAt } from '../../operations/atomic.js'
 import { parseMarkdown } from '../../parser/markdown.js'
 import { getHeadingText } from '../../parser/sections.js'
@@ -57,7 +57,7 @@ export function registerAttivitaWriteTools(): void {
       if (rawNote) validateStrings({ note: rawNote })
 
       // Elaborazione redazionale dei campi di testo libero
-      const titolo = await processText(rawTitolo)
+      const titolo = await processTitolo(rawTitolo)
       const richiesta = await processText(rawRichiesta)
       const criteri = await processText(rawCriteri)
       const note = rawNote ? await processText(rawNote) : undefined

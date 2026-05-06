@@ -300,6 +300,31 @@ export function findLineByPatternInRange(
 }
 
 /**
+ * Restituisce la posizione di fine dell'entry di lista che inizia
+ * alla prima linea indicata da firstLineEnd, includendo le righe
+ * di continuazione (indentate di 2 spazi) dell'item Markdown.
+ *
+ * firstLineEnd deve essere il lineEnd (incluso il \n) della prima
+ * riga fisica dell'item. Il valore restituito è la posizione
+ * immediatamente dopo l'ultima riga di continuazione (o
+ * firstLineEnd stesso se non ce ne sono).
+ */
+export function findListEntryEnd(content: string, firstLineEnd: number): number {
+  let pos = firstLineEnd
+  while (pos < content.length) {
+    const nextNewline = content.indexOf('\n', pos)
+    const lineEnd = nextNewline === -1 ? content.length : nextNewline + 1
+    const line = content.slice(pos, nextNewline === -1 ? content.length : nextNewline)
+    if (line.startsWith('  ') && line.trim() !== '') {
+      pos = lineEnd
+    } else {
+      break
+    }
+  }
+  return pos
+}
+
+/**
  * Trova l'ultima occorrenza di un pattern in un intervallo.
  */
 export function findLastLineByPatternInRange(

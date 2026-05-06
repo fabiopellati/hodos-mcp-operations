@@ -7,7 +7,8 @@ import {
   findIndexList,
   findBlockByHeadingId,
   findLineByPatternInRange,
-  findAfterTitleOffset
+  findAfterTitleOffset,
+  findListEntryEnd
 } from '../../parser/sections.js'
 import {
   insertAt,
@@ -182,10 +183,11 @@ export function registerCloseQuestioneTools(): void {
           indexInfo.endOffset
         )
         if (listRow) {
+          const entryEnd = findListEntryEnd(questioniResult, listRow.lineEnd)
           questioniResult = replaceRange(
             questioniResult,
             listRow.lineStart,
-            listRow.lineEnd,
+            entryEnd,
             ''
           )
         }

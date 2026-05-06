@@ -14,7 +14,8 @@ import {
   findLineByPattern,
   findLineByPatternInRange,
   findLastLineByPatternInRange,
-  findBlockByHeadingId
+  findBlockByHeadingId,
+  findListEntryEnd
 } from '../../parser/sections.js'
 import { validateStrings, validateEnum, VALID_STATES } from '../../operations/validate.js'
 import { formatStoriaEntry, formatCommentoHeader } from '../../enrichments/firma.js'
@@ -203,7 +204,7 @@ export function registerQuestioniWriteTools(): void {
         const indexInfo = findIndexList(tree)
         if (indexInfo) {
           const { offset: rowOffset, needsNewline } = findFirstListItemOffset(indexInfo)
-          const newRow = `${needsNewline ? '\n' : ''}- **${id}** — ${titolo} — open\n`
+          const newRow = `${needsNewline ? '\n' : ''}${formatListItem(`- **${id}** — `, `${titolo} — open`)}`
           result = insertAt(result, rowOffset, newRow)
           // Dopo l'inserimento, tutti gli offset successivi sono spostati
           // di newRow.length. Ricalcoliamo l'AST per le operazioni successive.
@@ -297,14 +298,15 @@ export function registerQuestioniWriteTools(): void {
             indexInfo.endOffset
           )
           if (listRow) {
-            const fullLine = result.slice(listRow.lineStart, listRow.lineEnd)
-            const endsWithNewline = fullLine.endsWith('\n')
-            const line = endsWithNewline ? fullLine.slice(0, -1) : fullLine
-            const updated = line.replace(/ — [a-z-]+$/, ` — ${nuovo_stato}`)
+            const entryEnd = findListEntryEnd(result, listRow.lineEnd)
+            const fullEntry = result.slice(listRow.lineStart, entryEnd)
+            const endsWithNewline = fullEntry.endsWith('\n')
+            const entryText = endsWithNewline ? fullEntry.slice(0, -1) : fullEntry
+            const updated = entryText.replace(/ — [a-z-]+$/, ` — ${nuovo_stato}`)
             result = replaceRange(
               result,
               listRow.lineStart,
-              listRow.lineEnd,
+              entryEnd,
               endsWithNewline ? updated + '\n' : updated
             )
           }
@@ -681,7 +683,8 @@ export function registerQuestioniWriteTools(): void {
             indexInfo.endOffset
           )
           if (listRow) {
-            result = replaceRange(result, listRow.lineStart, listRow.lineEnd, '')
+            const entryEnd = findListEntryEnd(result, listRow.lineEnd)
+            result = replaceRange(result, listRow.lineStart, entryEnd, '')
           }
         }
 

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { registerTool, type ToolResult } from '../../server.js'
-import { processText } from '../../enrichments/redazionale/pipeline.js'
+import { processText, processTitolo } from '../../enrichments/redazionale/pipeline.js'
 import {
   atomicFileOperation,
   insertAt,
@@ -177,7 +177,7 @@ export function registerQuestioniWriteTools(): void {
       validateStrings({ titolo: parsed.titolo, descrizione: parsed.descrizione })
 
       // Elaborazione redazionale dei campi di testo libero
-      const titolo = await processText(parsed.titolo)
+      const titolo = await processTitolo(parsed.titolo)
       const descrizione = await processText(parsed.descrizione)
       const domande_aperte = parsed.domande_aperte
         ? await Promise.all(parsed.domande_aperte.map(d => processText(d)))

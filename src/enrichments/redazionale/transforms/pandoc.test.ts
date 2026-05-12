@@ -36,11 +36,26 @@ describe('pandocNormalize', () => {
     assert.ok(result.includes('**grassetto**'))
   })
 
-  it('preserva elenchi', async () => {
+  it('preserva elenchi non ordinati standalone', async () => {
     const input = '- primo\n- secondo\n- terzo'
     const result = await pandocNormalize(input, 80)
     assert.ok(result.includes('- primo'))
     assert.ok(result.includes('- secondo'))
     assert.ok(result.includes('- terzo'))
+  })
+
+  it('preserva elenco ordinato preceduto da paragrafo senza riga vuota', async () => {
+    const input = '**Variazione**\n1. primo item\n2. secondo item\n3. terzo item'
+    const result = await pandocNormalize(input, 80)
+    assert.ok(result.includes('1.'), `output atteso con "1." ma ottenuto: ${result}`)
+    assert.ok(result.includes('2.'), `output atteso con "2." ma ottenuto: ${result}`)
+    assert.ok(result.includes('3.'), `output atteso con "3." ma ottenuto: ${result}`)
+  })
+
+  it('preserva em dash Unicode senza convertirlo in ---', async () => {
+    const input = 'Testo con trattino em — e continuazione.'
+    const result = await pandocNormalize(input, 80)
+    assert.ok(result.includes('—'), `em dash atteso ma ottenuto: ${result}`)
+    assert.ok(!result.includes('---'), `"---" non atteso ma presente in: ${result}`)
   })
 })

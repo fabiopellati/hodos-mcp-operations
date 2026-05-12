@@ -33,6 +33,24 @@ function restoreIndexListLines(text: string, lines: string[]): string {
   return text.replace(/XLIST(\d+)XEND/g, (_, idx) => lines[parseInt(idx)])
 }
 
+// Garantisce una riga vuota prima di ogni marcatore di lista (ordinata o non
+// ordinata) quando è preceduto da testo di paragrafo senza separatore.
+// Senza questa pre-elaborazione pandoc può collassare gli item nel paragrafo
+// precedente invece di riconoscerli come struttura di lista.
+function ensureBlankLineBeforeLists(text: string): string {
+  return text
+    .replace(/([^\n])\n(\d+\. )/g, '$1\n\n$2')
+    .replace(/([^\n])\n([-*] )/g, '$1\n\n$2')
+}
+
+// Ripristina i trattini em Unicode che pandoc converte nella sequenza " --- "
+// quando processa testo con l'estensione smart. Il pattern " --- " circondato da
+// spazi è univocamente un em dash in contesto inline; un thematic break pandoc
+// lo emette a inizio riga senza spazi precedenti.
+function restoreEmDash(text: string): string {
+  return text.replace(/ --- /g, ' — ')
+}
+
 // A-06: rimuovi escape non necessari prodotti da pandoc commonmark_x.
 // Pandoc escapa caratteri ASCII non significativi in contesto testuale.
 function removeUnnecessaryEscapes(text: string): string {
@@ -49,7 +67,8 @@ export function pandocNormalize(
 ): Promise<string> {
   return new Promise((resolve) => {
     const { guarded: afterTable, lines: tableLines } = protectTableLines(text)
-    const { guarded: guardedText, lines: listLines } = protectIndexListLines(afterTable)
+    const { guarded: afterIndexList, lines: listLines } = protectIndexListLines(afterTable)
+    const guardedText = ensureBlankLineBeforeLists(afterIndexList)
 
     const proc = spawn('pandoc', [
       '--wrap=auto',
@@ -72,7 +91,7 @@ export function pandocNormalize(
       }
       const afterRestoreTable = restoreTableLines(stdout, tableLines)
       const restored = restoreIndexListLines(afterRestoreTable, listLines)
-      resolve(removeUnnecessaryEscapes(restored))
+      resolve(removeUnnecessaryEscapes(restoreEmDash(restored)))
     })
 
     proc.on('error', (err) => {
